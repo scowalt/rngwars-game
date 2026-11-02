@@ -9,6 +9,7 @@ on:
       - "scripts/sqlite-*.py"
       - "scripts/backup_policy.py"
       - ".tflint.hcl"
+      - ".github/checkov/**"
       - ".github/workflows/terraform.yml"
 
 permissions:
@@ -48,11 +49,22 @@ jobs:
         run: |
           tflint --init
           tflint --recursive
-      - uses: bridgecrewio/checkov-action@c10e2438743528f9e4549758fad8b7a62052541d
+      - name: Scan synthetic private infrastructure configuration
+        uses: bridgecrewio/checkov-action@c10e2438743528f9e4549758fad8b7a62052541d
         with:
           directory: infra/
           framework: terraform
           quiet: true
           skip_check: CKV_TF_1,CKV_GIT_5,CKV_GIT_6
+          var_file: .github/checkov/private-repository.tfvars
+      - name: Test Checkov visibility contract
+        run: |
+          docker run --rm --pull=never --network none \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
+            --workdir /workspace \
+            --env PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python3 \
+            ghcr.io/bridgecrewio/checkov:3.4.0 \
+            .github/checkov/test_visibility.py -v
       - name: State the operating boundary
         run: echo 'Backend-free validation only. No state, provider readback, plan/apply, credential provisioning or service changes.' >> "$GITHUB_STEP_SUMMARY"
