@@ -1,0 +1,69 @@
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+class PreparationTests(unittest.TestCase):
+    def test_backup_module_uses_explicit_identity_and_keeps_bucket_scope(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "game-backups"
+            shutil.copytree(ROOT / "infra/game-backups", target)
+            environment = {
+                "PATH": os.environ["PATH"], "HOME": directory,
+                "TF_VAR_account_id": "a" * 32,
+                "TF_VAR_bucket_item_write_permission_group_id": "b" * 32,
+                "TF_VAR_bucket_name": "fixture-backup-bucket",
+                "TF_VAR_repository_prefix": "fixture-prefix",
+                "TF_VAR_bucket_location": "WEUR",
+                "TF_VAR_credential_request_name": "fixture-scope",
+            }
+            subprocess.run(["tofu", "init", "-backend=false", "-input=false"], cwd=target, env=environment, check=True, capture_output=True)
+            subprocess.run(["tofu", "validate"], cwd=target, env=environment, check=True, capture_output=True)
+            expression = "jsonencode([local.repository, local.credential_request])"
+            result = subprocess.run(["tofu", "console"], cwd=target, env=environment, input=expression, text=True, check=True, capture_output=True)
+            repository, request = json.loads(json.loads(result.stdout))
+            self.assertEqual(repository, "s3:https://" + "a" * 32 + ".r2.cloudflarestorage.com/fixture-backup-bucket/fixture-prefix")
+            self.assertEqual(request["policies"][0]["resources"], {"com.cloudflare.edge.r2.bucket." + "a" * 32 + "_default_fixture-backup-bucket": "*"})
+            self.assertEqual(request["policies"][0]["permission_groups"], [{"id": "b" * 32, "name": "Workers R2 Storage Bucket Item Write"}])
+            self.assertIn("prevent_destroy = true", (target / "main.tf").read_text())
+
+    def test_repository_and_host_identity_have_no_implicit_live_defaults(self):
+        provider = (ROOT / "infra/providers.tf").read_text()
+        self.assertIn('backend "s3" {}', provider)
+        self.assertNotIn("cloudflarestorage.com", provider)
+        github = (ROOT / "infra/github.tf").read_text()
+        self.assertRegex(github, r"visibility\s*=\s*var\.repository_visibility")
+        self.assertNotIn('visibility  = "public"', github)
+        self.assertNotIn('visibility  = "private"', github)
+        for name in ["Build API (F#)", "Build Frontend (SolidJS)"]:
+            self.assertEqual(github.count(name), 3)
+        import re
+        for setting in ["allows_force_pushes", "allows_deletions"]:
+            self.assertEqual(len(re.findall(setting + r"\s*=\s*false", github)), 3)
+        host = (ROOT / "infra/hetzner.tf").read_text()
+        self.assertIn("prevent_destroy = true", host)
+        self.assertIn("ignore_changes  = [user_data]", host)
+        self.assertIn("for_each = var.firewall_rules", host)
+        self.assertNotIn('port       = "22"', host)
+
+    def test_ci_covers_promotions_and_has_no_secret_or_publisher_jobs(self):
+        ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        for event in ["push", "pull_request"]:
+            self.assertEqual(ci[True][event]["branches"], ["main", "release", "production"])
+            self.assertNotIn("paths", ci[True][event])
+        self.assertEqual(ci["permissions"], {"contents": "read"})
+        self.assertIn("portable-sqlite-ops", ci["jobs"])
+        self.assertNotIn("secrets.", json.dumps(ci))
+        self.assertFalse((ROOT / ".github/workflows/deploy-production.yml").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

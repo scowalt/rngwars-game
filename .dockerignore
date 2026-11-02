@@ -1,0 +1,17 @@
+.git
+.github
+backlog
+docs
+apps/api.tests
+apps/marketing_site/*
+!apps/marketing_site/package.json
+
+**/.env
+**/.env.*
+**/bin
+**/obj
+**/node_modules
+**/dist
+
+!apps/frontend/dist/
+!apps/frontend/dist/**

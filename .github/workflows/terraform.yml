@@ -1,0 +1,57 @@
+name: OpenTofu CI
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - "ops/production/**"
+      - "scripts/sqlite-*.py"
+      - "scripts/backup_policy.py"
+      - ".tflint.hcl"
+      - ".github/workflows/terraform.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  opentofu-check:
+    name: OpenTofu Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4
+        with:
+          tofu_version: "1.9.0"
+          tofu_wrapper: false
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337
+        with:
+          tflint_version: "v0.51.1"
+      - name: Validate root without a backend or live credentials
+        working-directory: infra
+        run: |
+          tofu init -backend=false -input=false
+          tofu validate
+      - name: Validate dedicated backup module
+        working-directory: infra/game-backups
+        run: |
+          tofu init -backend=false -input=false
+          tofu validate
+      - name: TFLint
+        run: |
+          tflint --init
+          tflint --recursive
+      - uses: bridgecrewio/checkov-action@c10e2438743528f9e4549758fad8b7a62052541d
+        with:
+          directory: infra/
+          framework: terraform
+          quiet: true
+          skip_check: CKV_TF_1,CKV_GIT_5,CKV_GIT_6
+      - name: State the operating boundary
+        run: echo 'Backend-free validation only. No state, provider readback, plan/apply, credential provisioning or service changes.' >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,60 @@
+name: Container Image Scan
+
+on:
+  pull_request:
+    branches: [main, release, production]
+    paths:
+      - "Dockerfile"
+      - "apps/**"
+      - "bun.lock"
+      - "ops/production/game-entrypoint.sh"
+      - ".dockerignore"
+      - ".github/workflows/trivy.yml"
+  push:
+    branches: [main, release, production]
+    paths:
+      - "Dockerfile"
+      - "apps/**"
+      - "bun.lock"
+      - "ops/production/game-entrypoint.sh"
+      - ".dockerignore"
+      - ".github/workflows/trivy.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  trivy-scan:
+    name: Trivy Container Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: .
+          file: ./Dockerfile
+          target: production
+          load: true
+          push: false
+          tags: rngwars-game:scan
+      - uses: aquasecurity/trivy-action@8f28faec26515256b6d22074d1d2a8986f4cbd87
+        with:
+          image-ref: rngwars-game:scan
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: trivy-results
+          path: trivy-results.sarif
+          if-no-files-found: error

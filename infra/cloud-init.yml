@@ -1,0 +1,42 @@
+hostname: ${jsonencode(hostname)}
+manage_etc_hosts: true
+
+write_files:
+  - path: ${jsonencode("${installation.compose_directory}/docker-compose.yml")}
+    owner: root:root
+    permissions: "0600"
+    content: |
+      ${indent(6, production_compose)}
+
+  - path: ${jsonencode("${installation.helper_directory}/sqlite-backup.py")}
+    owner: root:root
+    permissions: "0555"
+    content: |
+      ${indent(6, backup_script)}
+
+  - path: ${jsonencode("${installation.helper_directory}/backup_policy.py")}
+    owner: root:root
+    permissions: "0444"
+    content: |
+      ${indent(6, backup_policy)}
+
+  - path: ${jsonencode("${installation.helper_directory}/sqlite-backup-schedule.py")}
+    owner: root:root
+    permissions: "0555"
+    content: |
+      ${indent(6, backup_schedule_script)}
+
+  - path: /etc/systemd/system/rngwars-sqlite-backup.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      ${indent(6, backup_service)}
+
+  - path: /etc/systemd/system/rngwars-sqlite-backup.timer
+    owner: root:root
+    permissions: "0644"
+    content: |
+      ${indent(6, backup_timer)}
+
+runcmd:
+  - [printf, "%s\n", "Configuration staged only; runtime installation, reviewed private bindings, credentials, recovery proof and service activation remain separate approved operations."]

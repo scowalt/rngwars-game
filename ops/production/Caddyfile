@@ -1,0 +1,3 @@
+{$RNGWARS_GAME_HOST} {
+    reverse_proxy {$RNGWARS_GAME_UPSTREAM}
+}

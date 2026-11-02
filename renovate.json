@@ -1,0 +1,71 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "enabled": false,
+  "extends": ["config:recommended"],
+  "labels": ["dependencies"],
+  "prHourlyLimit": 2,
+  "prConcurrentLimit": 3,
+  "schedule": ["after 10pm every weekday", "before 5am every weekday", "every weekend"],
+  "dependencyDashboard": true,
+  "dependencyDashboardAutoclose": true,
+  "rebaseWhen": "conflicted",
+  "rangeStrategy": "bump",
+  "platformAutomerge": true,
+  "automergeType": "pr",
+  "automergeStrategy": "squash",
+  "enabledManagers": ["npm", "bun", "nuget", "dockerfile", "github-actions"],
+  "ignorePaths": ["**/node_modules/**"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  },
+  "packageRules": [
+    {
+      "description": "Group all non-major dependencies",
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-minor-patch",
+      "matchPackageNames": ["*"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "description": "Require approval for major updates",
+      "groupName": "all major dependencies",
+      "groupSlug": "all-major",
+      "matchPackageNames": ["*"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
+      "automerge": false,
+      "labels": ["dependencies", "major"]
+    },
+    {
+      "description": "Keep Astro core and official integrations compatible",
+      "groupName": "Astro framework",
+      "groupSlug": "astro-framework",
+      "matchPackageNames": ["astro", "@astrojs/**"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
+      "automerge": false,
+      "labels": ["dependencies", "major"]
+    },
+    {
+      "description": "Allow .NET preview/RC packages to update within unstable channel",
+      "matchPackageNames": ["/^Microsoft\\./"],
+      "matchDatasources": ["nuget"],
+      "ignoreUnstable": false
+    },
+    {
+      "description": "GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "automerge": true,
+      "matchUpdateTypes": ["minor", "patch"]
+    },
+    {
+      "description": "Bun runtime updates (be cautious)",
+      "matchPackageNames": ["bun"],
+      "groupName": "Bun runtime",
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+[Unit]
+Description=RNGWars consistent SQLite encrypted backup and retention
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=10001
+Group=10001
+UMask=0077
+Environment=TZ=UTC
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 ${helper_directory}/sqlite-backup-schedule.py run ${data_directory}/game.sqlite3 --environment ${credentials_directory}/runtime.env
+TimeoutStartSec=3h
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=${data_directory} ${state_directory}

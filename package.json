@@ -1,0 +1,20 @@
+{
+  "name": "rngwars",
+  "private": true,
+  "scripts": {
+    "build:marketing": "bun run --cwd apps/marketing_site build",
+    "prettier": "prettier",
+    "prettier:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,css,md,yml,yaml}\"",
+    "prettier:write": "prettier --write \"**/*.{js,jsx,ts,tsx,json,css,md,yml,yaml}\""
+  },
+  "devDependencies": {
+    "lefthook": "2.1.14",
+    "markdownlint-cli": "0.49.1",
+    "prettier": "3.9.9"
+  },
+  "packageManager": "bun@1.3.11",
+  "workspaces": [
+    "apps/frontend",
+    "apps/marketing_site"
+  ]
+}

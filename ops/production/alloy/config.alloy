@@ -1,0 +1,84 @@
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_logging"]
+    regex         = "true"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "service_name"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  forward_to = [loki.process.containers.receiver]
+}
+
+loki.process "containers" {
+  stage.docker {}
+
+  stage.drop {
+    older_than          = "1h"
+    drop_counter_reason = "too_old"
+  }
+
+  forward_to = [loki.write.grafana_cloud.receiver]
+}
+
+loki.write "grafana_cloud" {
+  external_labels = {
+    project = sys.env("OBSERVABILITY_PROJECT"),
+  }
+
+  endpoint {
+    url = sys.env("LOKI_URL")
+
+    basic_auth {
+      username = sys.env("LOKI_USERNAME")
+      password = sys.env("LOKI_API_KEY")
+    }
+  }
+}
+
+prometheus.exporter.unix "host" {
+  rootfs_path = "/rootfs"
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+}
+
+prometheus.scrape "host_metrics" {
+  targets         = prometheus.exporter.unix.host.targets
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+  scrape_interval = "60s"
+}
+
+prometheus.exporter.cadvisor "containers" {
+  docker_host = "unix:///var/run/docker.sock"
+}
+
+prometheus.scrape "container_metrics" {
+  targets         = prometheus.exporter.cadvisor.containers.targets
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+  scrape_interval = "60s"
+}
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = sys.env("PROMETHEUS_URL")
+
+    basic_auth {
+      username = sys.env("PROMETHEUS_USERNAME")
+      password = sys.env("PROMETHEUS_API_KEY")
+    }
+  }
+}
