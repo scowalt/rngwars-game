@@ -41,6 +41,18 @@ without live credentials. Container CI builds a non-published image, treats HIGH
 vulnerability findings as advisory and uploads SARIF; build/scanner errors or missing artifacts
 still fail. Container/Checkov/hosted execution is not implied by local configuration validation.
 
+### Container diagnostics
+
+The Docker build step sets `DOCKER_BUILD_SUMMARY` and `DOCKER_BUILD_RECORD_UPLOAD` to `"false"`.
+This disables its optional build summary and downloadable `.dockerbuild` record, avoiding retention
+of detailed build traces. Normal build logs, metadata output and build-check annotations remain; the
+image build, vulnerability scan and explicit Trivy SARIF upload are unchanged.
+
+These settings apply to this workflow definition, not all repository diagnostics. They do not delete
+existing artifacts or change repository visibility, artifact access or retention. Historical refs
+and other workflows can retain different settings. Review future workflow changes accordingly;
+ordinary CI logs still disclose runner, tool and build metadata.
+
 ### Checkov visibility contract
 
 The Checkov step evaluates a **synthetic private configuration** using
