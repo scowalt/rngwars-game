@@ -1,6 +1,7 @@
 name: OpenTofu CI
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - "infra/**"

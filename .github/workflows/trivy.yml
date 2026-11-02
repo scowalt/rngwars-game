@@ -1,6 +1,7 @@
 name: Container Image Scan
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main, release, production]
     paths:
