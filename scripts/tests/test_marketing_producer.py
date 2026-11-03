@@ -7,6 +7,7 @@ from pathlib import Path
 import stat
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -80,6 +81,26 @@ class ProducerTests(unittest.TestCase):
             p.verify_signature(raw, "a" * 40, 43, runner=verifier)
         with self.assertRaises(p.m.Blocked):
             p.verify_signature(raw, "a" * 40, 43, runner=lambda command, **options: subprocess.CompletedProcess(command, 1, b"", b"verification failed"))
+
+    def test_bundle_digest_output_accepts_its_actual_numeric_suffix(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "step-output"
+            with patch.dict(os.environ, {"GITHUB_OUTPUT": str(path)}):
+                p.output({"source_revision": "a" * 40})
+                p.output({"bundle_sha256": "b" * 64})
+            self.assertEqual(path.read_text(), "source_revision=" + "a" * 40 + "\nbundle_sha256=" + "b" * 64 + "\n")
+
+    def test_step_output_still_rejects_missing_channel_or_injected_lines(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(p.m.Blocked):
+                p.output({"bundle_sha256": "b" * 64})
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "step-output"
+            with patch.dict(os.environ, {"GITHUB_OUTPUT": str(path)}):
+                for value in [{"bundle_sha256": "safe\ninjected=value"}, {"key\ninjected": "value"}, {"key": "value=value"}]:
+                    with self.assertRaises(p.m.Blocked):
+                        p.output(value)
+            self.assertFalse(path.exists())
 
 
 if __name__ == "__main__":
