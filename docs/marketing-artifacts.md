@@ -60,9 +60,9 @@ JSON. The CLI and GitHub-hosted platform are part of the verifier's trust base; 
 support fails closed. Only read-only verification receives bounded consistency retries.
 
 All artifacts, source/run identifiers and attestations are public. The build includes legal notices
-and deliberately disables product analytics while release configuration is being migrated. These are
-validation candidates, not production-approved bundles. Production build settings and behavior must
-be reconciled before an approved cutover.
+and leaves product analytics unset, matching the reviewed native build configuration. Artifact
+creation does not itself approve production use. Production settings and behavior must be checked
+again as part of the controlled cutover.
 
 The exact action allowlist must include the pinned `actions/attest-build-provenance` action and its
 pinned `actions/attest` dependency. Neither blanket GitHub-owned action permission nor weakened SHA
@@ -70,12 +70,12 @@ pinning is required.
 
 ## Remaining release requirements
 
-A separate consumer must verify successful completed producer status, exact artifact ID/digest and
-an independently trusted signer revision; never select by name or trust manifest claims alone.
-Protected release capabilities, approved production build settings, private diagnostics, a durable
-conditional-create attempt ledger, production/preview controller fencing and rollback remain
-separate prerequisites. No Cloudflare controller, game publisher, private package grant or live
-service is changed by the candidate workflow.
+The [protected release consumer](marketing-release.md) separately verifies completed producer
+status, exact artifact ID/digest and trusted signer revision; it never trusts names or manifests
+alone. It adds environment protection, encrypted diagnostics, immutable attempt reservations,
+controller fencing and rollback. Its enablement and live acceptance are separate from candidate
+creation. No Cloudflare controller, game publisher, private package grant or live service is changed
+by the candidate workflow.
 
 See [the release boundary](release-boundary.md). Tests use synthetic assets and API responses;
 passing them is not a live release or recovery acceptance test.

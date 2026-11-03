@@ -1,0 +1,117 @@
+name: Marketing release
+
+on:
+  workflow_run:
+    workflows: [Marketing artifact]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      producer_run_id:
+        description: Exact successful signed marketing producer run
+        required: true
+        type: string
+      operation:
+        description: Validate only, check protected credentials, or request a gated deployment
+        required: true
+        default: validate
+        type: choice
+        options: [validate, preflight, deploy]
+
+permissions:
+  contents: read
+  actions: read
+  attestations: read
+
+concurrency:
+  group: marketing-release
+  cancel-in-progress: false
+
+env:
+  PRODUCER_RUN_ID: ${{ github.event.workflow_run.id || inputs.producer_run_id }}
+
+jobs:
+  prepare:
+    if: >-
+      github.repository_id == '1442331254' && github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      artifact_id: ${{ steps.candidate.outputs.artifact_id }}
+      bundle_sha256: ${{ steps.candidate.outputs.bundle_sha256 }}
+      kind: ${{ steps.candidate.outputs.kind }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          ref: ${{ github.workflow_sha }}
+      - name: Independently authenticate exact candidate and current source
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/marketing_release.py prepare
+
+  preflight:
+    needs: prepare
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'preflight'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: marketing-${{ needs.prepare.outputs.kind }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          ref: ${{ github.workflow_sha }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: "1.3.11"
+          no-cache: true
+      - name: Verify protected bindings and encrypted evidence without provider mutations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ARTIFACT_ID: ${{ needs.prepare.outputs.artifact_id }}
+          EXPECTED_BUNDLE_SHA256: ${{ needs.prepare.outputs.bundle_sha256 }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MARKETING_RELEASE_BINDINGS: ${{ secrets.MARKETING_RELEASE_BINDINGS }}
+          RELEASE_STORAGE_ACCESS_KEY_ID: ${{ secrets.RELEASE_STORAGE_ACCESS_KEY_ID }}
+          RELEASE_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_STORAGE_SECRET_ACCESS_KEY }}
+          RELEASE_LOG_ENCRYPTION_KEY: ${{ secrets.RELEASE_LOG_ENCRYPTION_KEY }}
+        run: python3 scripts/marketing_release.py preflight
+
+  release:
+    needs: prepare
+    if: vars.MARKETING_RELEASE_ENABLED == 'true' && (github.event_name == 'workflow_run' || inputs.operation == 'deploy')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: marketing-${{ needs.prepare.outputs.kind }}
+    permissions:
+      contents: write
+      actions: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          ref: ${{ github.workflow_sha }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: "1.3.11"
+          no-cache: true
+      - name: Reverify, reserve immutable attempt and perform one protected release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ARTIFACT_ID: ${{ needs.prepare.outputs.artifact_id }}
+          EXPECTED_BUNDLE_SHA256: ${{ needs.prepare.outputs.bundle_sha256 }}
+          RELEASE_KIND: ${{ needs.prepare.outputs.kind }}
+          MARKETING_RELEASE_ENABLED: ${{ vars.MARKETING_RELEASE_ENABLED }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MARKETING_RELEASE_BINDINGS: ${{ secrets.MARKETING_RELEASE_BINDINGS }}
+          RELEASE_STORAGE_ACCESS_KEY_ID: ${{ secrets.RELEASE_STORAGE_ACCESS_KEY_ID }}
+          RELEASE_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_STORAGE_SECRET_ACCESS_KEY }}
+          RELEASE_LOG_ENCRYPTION_KEY: ${{ secrets.RELEASE_LOG_ENCRYPTION_KEY }}
+        run: python3 scripts/marketing_release.py deploy
