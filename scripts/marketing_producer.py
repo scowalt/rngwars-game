@@ -95,7 +95,7 @@ def download(artifact_id):
 
 def output(values):
     path = os.environ.get("GITHUB_OUTPUT")
-    m.require(path is not None and all(re.fullmatch(r"[a-z_]+", key) and re.fullmatch(r"[a-zA-Z0-9/._-]+", str(value)) for key, value in values.items()), "invalid_step_output")
+    m.require(path is not None and all(re.fullmatch(r"[a-z][a-z0-9_]*", key) and re.fullmatch(r"[a-zA-Z0-9/._-]+", str(value)) for key, value in values.items()), "invalid_step_output")
     with open(path, "a", encoding="utf-8") as stream:
         for key, value in values.items():
             stream.write(f"{key}={value}\n")
