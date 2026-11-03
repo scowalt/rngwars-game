@@ -59,6 +59,8 @@ jobs:
           bun-version: "1.3.11"
       - name: Install locked dependencies without lifecycle scripts
         run: bun install --frozen-lockfile --ignore-scripts
+      - name: Test encrypted release evidence
+        run: bun test scripts/tests/release_evidence.test.ts
       - name: Test frontend
         run: bun run --cwd apps/frontend test --maxWorkers=2
       - name: Build frontend
