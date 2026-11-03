@@ -8,6 +8,7 @@
     <Compile Include="Models.fs" />
     <Compile Include="SqliteSchema.fs" />
     <Compile Include="Database.fs" />
+    <Compile Include="DatabaseInitialization.fs" />
     <Compile Include="Auth.fs" />
     <Compile Include="ConnectionTracker.fs" />
     <Compile Include="Elo.fs" />

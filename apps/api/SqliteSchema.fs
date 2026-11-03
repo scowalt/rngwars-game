@@ -7,6 +7,8 @@ open System.Text.RegularExpressions
 open Microsoft.Data.Sqlite
 
 module internal SqliteSchema =
+    let freshApplicationId = 0x524E4757
+
     let private assembly = typeof<Models.User>.Assembly
 
     let private scripts =
@@ -35,7 +37,7 @@ module internal SqliteSchema =
             | [ kind; name; table; sql ] -> [ kind; name; table ], Option.map sqlTokens sql
             | _ -> invalidOp "SQLite schema metadata is invalid.")
 
-    let validate (connection: SqliteConnection) requirePopulation =
+    let validate (connection: SqliteConnection) requireProduction =
         if rows connection "PRAGMA integrity_check" <> [ [ Some "ok" ] ] then
             invalidOp "SQLite integrity check failed."
         if rows connection "PRAGMA foreign_key_check" <> [] then
@@ -43,7 +45,7 @@ module internal SqliteSchema =
         let tables = rows connection "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
         let hasJournal = tables |> List.exists (fun row -> row = [ Some "SchemaVersions" ])
         if not hasJournal then
-            if requirePopulation || not tables.IsEmpty then
+            if requireProduction || not tables.IsEmpty then
                 invalidOp "SQLite schema is missing its migration journal; manual reconciliation is required."
         else
             let journalColumns = rows connection "SELECT name, type, [notnull], pk FROM pragma_table_info('SchemaVersions') ORDER BY cid"
@@ -63,7 +65,7 @@ module internal SqliteSchema =
             if applied.Length <> (applied |> Set.ofList |> Set.count)
                || applied <> (scripts |> Array.take applied.Length |> Array.toList) then
                 invalidOp "SQLite migration journal is duplicated or out of order."
-            if requirePopulation && applied.Length <> scripts.Length then
+            if requireProduction && applied.Length <> scripts.Length then
                 invalidOp "Production SQLite migration journal is incomplete."
             use expected = new SqliteConnection("Data Source=:memory:")
             expected.Open()
@@ -75,5 +77,6 @@ module internal SqliteSchema =
                 command.ExecuteNonQuery() |> ignore
             if schema connection <> schema expected then
                 invalidOp "SQLite gameplay schema does not match its migration journal; manual reconciliation is required."
-            if requirePopulation && rows connection "SELECT 1 FROM users LIMIT 1" = [] then
-                invalidOp "Production SQLite database has no persisted player population."
+            if requireProduction && rows connection "SELECT 1 FROM users LIMIT 1" = []
+               && rows connection "PRAGMA application_id" <> [ [ Some (string freshApplicationId) ] ] then
+                invalidOp "Production SQLite database has no persisted player population or explicit initialization."

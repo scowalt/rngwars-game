@@ -5,6 +5,8 @@ on:
   push:
     branches: [main]
     paths:
+      - scripts/sqlite-backup.py
+      - scripts/backup_policy.py
       - Dockerfile
       - .dockerignore
       - apps/api/**
@@ -22,6 +24,8 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - scripts/sqlite-backup.py
+      - scripts/backup_policy.py
       - Dockerfile
       - .dockerignore
       - apps/api/**
@@ -70,7 +74,21 @@ jobs:
           build-args: |
             VITE_POSTHOG_KEY=
             VITE_SENTRY_DSN=
-      - name: Verify native API, SQLite and restart behavior with disposable data
+      - name: Install native Restic for isolated encrypted recovery verification
+        run: |
+          set -eu
+          version=0.19.1
+          cd "$RUNNER_TEMP"
+          asset="restic_${version}_linux_arm64.bz2"
+          base="https://github.com/restic/restic/releases/download/v${version}"
+          curl --fail --silent --show-error --location "$base/$asset" -o "$asset"
+          curl --fail --silent --show-error --location "$base/SHA256SUMS" -o SHA256SUMS
+          grep " $asset$" SHA256SUMS | sha256sum --check --strict
+          mkdir -p restic-bin
+          bzip2 --decompress --stdout "$asset" > restic-bin/restic
+          chmod 0555 restic-bin/restic
+          echo "$RUNNER_TEMP/restic-bin" >> "$GITHUB_PATH"
+      - name: Verify native initialization, encrypted recovery, API and restart behavior
         env:
           TEST_IMAGE: rngwars-native:${{ github.sha }}
         run: python3 scripts/native_game_smoke.py "$TEST_IMAGE"

@@ -4,6 +4,15 @@ This repository is intended to own maintained application, operational and CI/CD
 Deployment-specific values and historical operating evidence are not part of the public source. The
 code here does not authorize provisioning, data access, installation, activation or recovery.
 
+## Fresh database initialization
+
+An independently approved clean start uses the explicit offline
+[`init-db <absolute-path>` command](fresh-sqlite-initialization.md) and a new private destination.
+Ordinary Production startup still refuses missing, unmarked-empty or invalid storage. This
+capability does not authorize deleting an existing database, reinitializing a backup repository, or
+activating a service. Exact-image, storage-ownership and new-baseline off-host backup/restore gates
+remain.
+
 ## Backup policy
 
 `scripts/sqlite-backup.py` retains consistent SQLite snapshots, full schema/typed-record

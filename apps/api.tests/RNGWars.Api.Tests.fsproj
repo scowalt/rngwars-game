@@ -8,6 +8,7 @@
   <ItemGroup>
     <Compile Include="SyntheticDatabase.fs" />
     <Compile Include="DatabaseTests.fs" />
+    <Compile Include="InitializationTests.fs" />
     <Compile Include="EloTests.fs" />
     <Compile Include="ApiHttpFixture.fs" />
     <Compile Include="ApiHttpTests.fs" />
