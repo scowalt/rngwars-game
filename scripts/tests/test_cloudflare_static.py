@@ -31,6 +31,27 @@ class Fake:
         raise AssertionError(path)
 
 
+BINDING = {"worker_tag": "a" * 32, "compatibility_date": "2024-12-01", "compatibility_flags": [], "native_trigger_ids": ["production", "preview"]}
+
+
+class ControllerState(Fake):
+    def __init__(self):
+        super().__init__()
+        self.triggers = []
+        self.status = "stopped"
+        self.repeat_page = False
+
+    def request(self, method, path, data=None, content_type=None, token=None):
+        self.calls.append((method, path))
+        if "/services/" in path:
+            return {"default_environment": {"script": {"id": self.worker, "tag": "a" * 32}}}
+        if path.endswith("/settings"):
+            return {"bindings": [], "compatibility_date": "2024-12-01", "compatibility_flags": []}
+        if path.endswith("/triggers"):
+            return {"triggers": self.triggers}
+        return [{"build_uuid": "build", "status": self.status}] if "page=1" in path or self.repeat_page else []
+
+
 class StaticReleaseTests(unittest.TestCase):
     def test_uploads_only_static_assets_and_keeps_header_rules_as_metadata(self):
         client = Fake()
@@ -63,28 +84,39 @@ class StaticReleaseTests(unittest.TestCase):
             c.upload(client, {"compatibility_date": "2024-12-01", "compatibility_flags": []}, {"index.html": b"site"}, 42, "a" * 40, "b" * 64)
         self.assertEqual(client.calls, [])
 
-    def test_controller_fence_requires_all_known_triggers_and_no_inflight_build(self):
-        binding = {"worker_tag": "a" * 32, "compatibility_date": "2024-12-01", "compatibility_flags": [], "native_trigger_ids": ["production", "preview"]}
-        class State(Fake):
-            exclusions = ["*"]
-            status = "stopped"
-            def request(self, method, path, data=None, content_type=None, token=None):
-                if "/services/" in path:
-                    return {"default_environment": {"script": {"id": self.worker, "tag": "a" * 32}}}
-                if path.endswith("/settings"):
-                    return {"bindings": [], "compatibility_date": "2024-12-01", "compatibility_flags": []}
-                if path.endswith("/triggers"):
-                    return [{"trigger_uuid": x, "external_script_id": "a" * 32, "branch_excludes": self.exclusions} for x in ["production", "preview"]]
-                return [{"build_uuid": "build", "status": self.status}] if "page=1" in path else []
-        c.fenced(State(), binding)
-        active = State()
-        active.status = "running"
+    def test_branch_and_path_filters_are_not_a_controller_fence(self):
+        for filters in [{"branch_excludes": ["*"]}, {"branch_includes": ["main"], "branch_excludes": []}, {"path_excludes": ["*"]}]:
+            with self.subTest(filters=filters):
+                client = ControllerState()
+                client.triggers = [{"trigger_uuid": x, "external_script_id": "a" * 32, **filters} for x in ["production", "preview"]]
+                with self.assertRaises(c.Blocked):
+                    c.fenced(client, BINDING)
+
+    def test_disconnected_controllers_still_require_complete_idle_build_inventory(self):
+        client = ControllerState()
+        c.fenced(client, BINDING)
+        self.assertTrue(any("page=2" in path for method, path in client.calls))
+        self.assertTrue(all(method == "GET" for method, path in client.calls))
+        for status in ["queued", "running"]:
+            with self.subTest(status=status):
+                client = ControllerState()
+                client.status = status
+                with self.assertRaises(c.Blocked):
+                    c.fenced(client, BINDING)
+
+    def test_new_or_malformed_controller_inventory_cannot_pass(self):
+        for inventory in [[{"trigger_uuid": "unexpected"}], None, {}]:
+            with self.subTest(inventory=inventory):
+                client = ControllerState()
+                client.triggers = inventory
+                with self.assertRaises(c.Blocked):
+                    c.fenced(client, BINDING)
+
+    def test_disconnection_does_not_excuse_repeating_build_pages(self):
+        client = ControllerState()
+        client.repeat_page = True
         with self.assertRaises(c.Blocked):
-            c.fenced(active, binding)
-        unfenced = State()
-        unfenced.exclusions = ["main"]
-        with self.assertRaises(c.Blocked):
-            c.fenced(unfenced, binding)
+            c.fenced(client, BINDING)
 
 
 if __name__ == "__main__":
