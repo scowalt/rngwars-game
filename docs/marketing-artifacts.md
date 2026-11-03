@@ -1,8 +1,9 @@
 # Marketing artifact preparation
 
-`scripts/marketing_artifact.py` is a library for the credential-free part of marketing CD. It is not
-an enabled producer workflow or deployment command. No release permission follows from packaging
-files or inspecting a manifest.
+`scripts/marketing_artifact.py` supplies bounded asset packaging and CI/source validation.
+`marketing-artifact.yml` produces signed, public release candidates using trusted-main controller
+code. It does not deploy anything or carry production credentials. An internally consistent manifest
+alone is not authorization or proof of authentic provenance.
 
 ## Implemented interfaces
 
@@ -26,18 +27,59 @@ Limits are 2,000 assets, 25 MiB per asset, 50 MiB total asset bytes and 64 MiB c
 The bundle permits one additional manifest of at most 1 MiB. ZIP links, duplicate entries,
 unsupported compression, encrypted entries, malformed JSON and duplicate JSON keys are rejected.
 
+## Signed candidate workflow
+
+```text
+exact successful push/manual CI
+  → protected-main resolver
+  → source build with read-only contents access
+  → fresh trusted-main job validates bytes and reconstructs the manifest
+  → GitHub OIDC/SLSA attestation
+  → cryptographic verification
+  → immutable candidate artifact
+```
+
+CI runs on all branch pushes to establish exact-head results for preview candidates. Pull-request
+merge validation remains separate. Fork/PR-merge runs cannot enter the signing graph. The producer
+runs from main through `workflow_run`, or manual dispatch with an explicit successful CI run ID.
+Only first attempts and current source/controller revisions are accepted. Superseded builds fail
+closed; per-branch concurrency does not promise an archive of every intermediate revision.
+
+Source execution and signing use separate GitHub-hosted runners. The source job gets no OIDC,
+attestation, package, deployment, private-network or production-secret capability. The signing job
+checks out only trusted-main code, installs no source dependencies, validates the exact upstream
+artifact ID/run/repository/transport digest, and never extracts or executes source-built files. Only
+that job has `id-token: write` and `attestations: write`; ordinary CI stays read-only.
+
+The attestation covers the complete bundle, including the independently reconstructed manifest. The
+manifest identifies the actual tested source; the attestation's workflow identity identifies the
+trusted controller, which may be a different revision for previews. Verification uses GitHub CLI
+with an exact main workflow certificate identity, signer/source digest, ref and invocation, and
+rejects self-hosted signers. It fetches authentic attestations from GitHub, not caller-provided
+JSON. The CLI and GitHub-hosted platform are part of the verifier's trust base; missing verifier
+support fails closed. Only read-only verification receives bounded consistency retries.
+
+All artifacts, source/run identifiers and attestations are public. The build includes legal notices
+and deliberately disables product analytics while release configuration is being migrated. These are
+validation candidates, not production-approved bundles. Production build settings and behavior must
+be reconciled before an approved cutover.
+
+The exact action allowlist must include the pinned `actions/attest-build-provenance` action and its
+pinned `actions/attest` dependency. Neither blanket GitHub-owned action permission nor weakened SHA
+pinning is required.
+
 ## Remaining release requirements
 
-A trusted-main producer still needs to build without deployment credentials, independently construct
-and sign the bundle in a separate job, and verify its authentic attestation. A consumer must bind
-the exact artifact ID/digest and trusted signer, not select by name or accept arbitrary manifest
-claims. Protected release capabilities, private diagnostics, a durable conditional-create attempt
-ledger, production/preview controller fencing and rollback are separate prerequisites. No publisher,
-credential, environment, trigger or live service is changed by this library.
+A separate consumer must verify successful completed producer status, exact artifact ID/digest and
+an independently trusted signer revision; never select by name or trust manifest claims alone.
+Protected release capabilities, approved production build settings, private diagnostics, a durable
+conditional-create attempt ledger, production/preview controller fencing and rollback remain
+separate prerequisites. No Cloudflare controller, game publisher, private package grant or live
+service is changed by the candidate workflow.
 
 See [the release boundary](release-boundary.md). Tests use synthetic assets and API responses;
 passing them is not a live release or recovery acceptance test.
 
 ```bash
-python3 -m unittest discover -s scripts/tests -p test_marketing_artifact.py -v
+python3 -m unittest discover -s scripts/tests -p 'test_marketing*.py' -v
 ```

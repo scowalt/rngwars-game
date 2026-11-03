@@ -56,8 +56,9 @@ class PreparationTests(unittest.TestCase):
 
     def test_ci_covers_promotions_and_has_no_secret_or_publisher_jobs(self):
         ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        self.assertEqual(ci[True]["push"]["branches"], ["**"])
+        self.assertEqual(ci[True]["pull_request"]["branches"], ["main", "release", "production"])
         for event in ["push", "pull_request"]:
-            self.assertEqual(ci[True][event]["branches"], ["main", "release", "production"])
             self.assertNotIn("paths", ci[True][event])
         self.assertEqual(ci["permissions"], {"contents": "read"})
         self.assertIn("portable-sqlite-ops", ci["jobs"])
