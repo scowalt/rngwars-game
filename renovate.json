@@ -10,14 +10,15 @@
   "dependencyDashboardAutoclose": true,
   "rebaseWhen": "conflicted",
   "rangeStrategy": "bump",
-  "platformAutomerge": true,
+  "automerge": false,
+  "platformAutomerge": false,
   "automergeType": "pr",
   "automergeStrategy": "squash",
   "enabledManagers": ["npm", "bun", "nuget", "dockerfile", "github-actions"],
   "ignorePaths": ["**/node_modules/**"],
   "lockFileMaintenance": {
     "enabled": true,
-    "automerge": true
+    "automerge": false
   },
   "packageRules": [
     {
@@ -26,7 +27,7 @@
       "groupSlug": "all-minor-patch",
       "matchPackageNames": ["*"],
       "matchUpdateTypes": ["minor", "patch"],
-      "automerge": true
+      "automerge": false
     },
     {
       "description": "Require approval for major updates",
@@ -58,7 +59,7 @@
       "description": "GitHub Actions updates",
       "matchManagers": ["github-actions"],
       "groupName": "GitHub Actions",
-      "automerge": true,
+      "automerge": false,
       "matchUpdateTypes": ["minor", "patch"]
     },
     {
