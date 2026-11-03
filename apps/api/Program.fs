@@ -94,8 +94,7 @@ module Program =
             | Error _ -> ()
         )
 
-    [<EntryPoint>]
-    let main args =
+    let private runWeb (args: string array) =
         let builder = WebApplication.CreateBuilder(args)
         Database.runMigrationsForEnvironment builder.Environment.EnvironmentName
 
@@ -151,3 +150,19 @@ module Program =
 
         app.Run()
         0
+
+    [<EntryPoint>]
+    let main args =
+        match args with
+        | [| "init-db"; path |] ->
+            try
+                DatabaseInitialization.initialize path
+                System.Console.WriteLine("Database initialized")
+                0
+            with _ ->
+                System.Console.Error.WriteLine("Database initialization failed; no existing database was replaced")
+                1
+        | values when values.Length > 0 && values[0] = "init-db" ->
+            System.Console.Error.WriteLine("Usage: init-db <absolute-path>")
+            64
+        | _ -> runWeb args

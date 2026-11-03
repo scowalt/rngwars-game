@@ -3,8 +3,10 @@
 ## Portable checks
 
 Run the commands in the root README. Backend tests use synthetic/disposable SQLite data and test
-native schema handling, storage and ELO behavior. Frontend tests run through Vitest; marketing
-validation and builds do not start an HTTP server.
+native schema handling, storage and ELO behavior. Linux backend tests also invoke the real offline
+initializer, exercise first-player Production persistence and reject unsafe/partial storage; see the
+[initialization contract and fault-injection boundary](fresh-sqlite-initialization.md). Frontend
+tests run through Vitest; marketing validation and builds do not start an HTTP server.
 
 ```sh
 dotnet test apps/api.tests/RNGWars.Api.Tests.fsproj --no-build --no-restore --filter 'FullyQualifiedName!~ApiHttpTests'
@@ -36,10 +38,13 @@ production PRs/pushes without path filters that could strand required promotion 
 
 Frontend build telemetry is disabled by empty values. Portable ops CI runs script/operator tests
 against disposable synthetic data and local encrypted repositories; tests render scheduler units and
-parse Compose without a daemon. IaC CI initializes with `-backend=false`, validates and lints
-without live credentials. Container CI builds a non-published image, treats HIGH/CRITICAL
-vulnerability findings as advisory and uploads SARIF; build/scanner errors or missing artifacts
-still fail. Container/Checkov/hosted execution is not implied by local configuration validation.
+parse Compose without a daemon. The separate hosted native ARM64 workflow runs the actual image's
+offline initializer, encrypted local backup/restore and first-user Production restart checks in
+network-isolated containers. It does not access a live host or real backup repository. IaC CI
+initializes with `-backend=false`, validates and lints without live credentials. Container CI builds
+a non-published image, treats HIGH/CRITICAL vulnerability findings as advisory and uploads SARIF;
+build/scanner errors or missing artifacts still fail. Container/Checkov/hosted execution is not
+implied by local configuration validation.
 
 ### Container diagnostics
 

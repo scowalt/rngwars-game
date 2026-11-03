@@ -5,6 +5,8 @@ from pathlib import Path
 import platform
 import re
 import subprocess
+import sys
+import tempfile
 import time
 import uuid
 
@@ -23,11 +25,37 @@ def validate_context(env, machine):
     require(re.fullmatch(r"[a-f0-9]{40}", env.get("GITHUB_SHA", "")), "exact_source_required")
 
 
-def command(args, content=None, timeout=45, required=True):
-    result = subprocess.run(args, input=content, capture_output=True, text=True, timeout=timeout)
+def command(args, content=None, timeout=45, required=True, env=None):
+    result = subprocess.run(args, input=content, capture_output=True, text=True, timeout=timeout, env=env)
     if required:
-        require(result.returncode == 0, "owned_container_command_failed")
+        require(result.returncode == 0, "synthetic_fixture_command_failed")
     return result
+
+
+def encrypted_roundtrip(source, root):
+    require(root.is_absolute() and not root.is_symlink() and root.stat().st_mode & 0o777 == 0o700, "private_fixture_directory_required")
+    state = root / "state"
+    state.mkdir(mode=0o700)
+    password = root / "password"
+    with password.open("x") as handle:
+        password.chmod(0o600)
+        handle.write("synthetic-local-fixture-only\n")
+    repository = root / "repository"
+    policy = root / "policy.json"
+    with policy.open("x") as handle:
+        policy.chmod(0o600)
+        json.dump({"repository": str(repository), "host": "native-fixture", "tag": "fresh-baseline", "image_repository": "ghcr.io/example/game", "data_directory": str(root)}, handle)
+    env = {"PATH": os.environ["PATH"], "RESTIC_REPOSITORY": str(repository), "RESTIC_PASSWORD_FILE": str(password), "SQLITE_BACKUP_STATE_DIR": str(state), "SQLITE_BACKUP_POLICY_FILE": str(policy), "TZ": "UTC"}
+    operator = [sys.executable, str(Path(__file__).with_name("sqlite-backup.py"))]
+    command(operator + ["init"], env=env, timeout=120)
+    backup = command(operator + ["backup", str(source)], env=env, timeout=120)
+    snapshot = backup.stdout.strip().split()[-1]
+    require(re.fullmatch(r"[a-f0-9]{64}", snapshot), "fixture_snapshot_identity")
+    restored = root / "restored.db"
+    command(operator + ["restore", snapshot, str(restored)], env=env, timeout=120)
+    command(operator + ["verify", str(source), str(restored)], env=env)
+    command(operator + ["check"], env=env, timeout=120)
+    return restored
 
 
 def request(container, method, path, token=None, body=None):
@@ -79,20 +107,46 @@ def main():
         command(["docker", "volume", "create", "--label", "rngwars.synthetic=true", volume])
         created = True
         command(["docker", "run", "--rm", "--network", "none", "--read-only", "--user", "0:0", "--entrypoint", "/bin/sh", "--mount", f"type=volume,src={volume},dst=/data", args.image, "-c", "chown 10001:10001 /data && chmod 0700 /data"])
-        def start(label, environment, database="/data/game.db"):
+        runtime = ["--network", "none", "--read-only", "--ulimit", "core=0", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m", "--mount", f"type=volume,src={volume},dst=/data"]
+        def initialize(label, database, root=False):
             name = prefix + "-" + label
             containers.append(name)
-            command(["docker", "run", "-d", "--init", "--name", name, "--network", "none", "--read-only", "--ulimit", "core=0", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m", "--mount", f"type=volume,src={volume},dst=/data", "-e", "DOTNET_URLS=http://127.0.0.1:5000", "-e", "DOTNET_ENVIRONMENT=" + environment, "-e", "ASPNETCORE_ENVIRONMENT=" + environment, "-e", "DATABASE_PATH=" + database, "-e", "SENTRY_DSN=", args.image])
+            user = ["--user", "0:0"] if root else []
+            result = command(["docker", "run", "--init", "--name", name, *runtime, *user, "-e", "DOTNET_URLS=invalid-listening-address", "-e", "DOTNET_ENVIRONMENT=Production", "-e", "ASPNETCORE_ENVIRONMENT=Production", "-e", "DATABASE_PATH=:memory:", "-e", "SENTRY_DSN=", args.image, "dotnet", "RNGWars.Api.dll", "init-db", database], required=False)
+            if root:
+                require(result.returncode == 1 and "Database initialization failed;" in result.stderr, "root_initialization_not_rejected")
+            else:
+                require(result.returncode == 0 and "Database initialized" in result.stdout and "Application started" not in result.stdout, "offline_initialization_failed")
             return name
-        seed = start("empty-schema", "Testing")
+        def start(label, environment, database="/data/restored.db"):
+            name = prefix + "-" + label
+            containers.append(name)
+            command(["docker", "run", "-d", "--init", "--name", name, *runtime, "-e", "DOTNET_URLS=http://127.0.0.1:5000", "-e", "DOTNET_ENVIRONMENT=" + environment, "-e", "ASPNETCORE_ENVIRONMENT=" + environment, "-e", "DATABASE_PATH=" + database, "-e", "SENTRY_DSN=", args.image])
+            return name
+        seed = start("empty-schema", "Testing", "/data/unmarked.db")
         ready(seed)
         command(["docker", "stop", "--time", "10", seed])
-        empty = start("refuse-empty", "Production")
+        empty = start("refuse-empty", "Production", "/data/unmarked.db")
         result = command(["docker", "wait", empty], timeout=40)
         require(result.stdout.strip().isdigit() and int(result.stdout.strip()) != 0, "empty_production_database_accepted")
-        checks.append("production_rejects_empty_population")
-        seed = start("seed", "Testing")
+        checks.append("production_rejects_unmarked_empty_population")
+        initialize("refuse-root-init", "/data/root-rejected.db", root=True)
+        initialized = initialize("offline-init", "/data/game.db")
+        with tempfile.TemporaryDirectory(prefix="rngwars-native-backup-") as area:
+            root = Path(area)
+            source = root / "initialized.db"
+            command(["docker", "cp", initialized + ":/data/game.db", str(source)])
+            source.chmod(0o600)
+            restored = encrypted_roundtrip(source, root)
+            command(["docker", "run", "--rm", *runtime, "--entrypoint", "/bin/sh", args.image, "-c", "test ! -e /data/restored.db && test ! -e /data/root-rejected.db"])
+            command(["docker", "cp", str(restored), initialized + ":/data/restored.db"])
+            command(["docker", "run", "--rm", *runtime, "--user", "0:0", "--entrypoint", "/bin/sh", args.image, "-c", "chown 10001:10001 /data/restored.db && chmod 0600 /data/restored.db"])
+        checks.extend(["offline_initialization_without_web_host", "offline_initialization_rejects_root", "encrypted_empty_baseline_backup_restore"])
+        seed = start("first-production", "Production")
         ready(seed)
+        status, leaderboard = request(seed, "GET", "/api/leaderboard")
+        require(status == 200 and isinstance(leaderboard, dict) and leaderboard.get("entries") == [] and leaderboard.get("hasMore") is False, "fresh_baseline_not_empty")
+        checks.append("production_accepts_initialized_empty_restore")
         status, signup = request(seed, "POST", "/api/users/anonymous", body={})
         require(status == 201 and isinstance(signup, dict), "native_signup_failed")
         token = signup["token"]

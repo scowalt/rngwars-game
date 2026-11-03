@@ -19,6 +19,15 @@ module Database =
         environment.Equals("Development", StringComparison.OrdinalIgnoreCase)
         || environment.Equals("Testing", StringComparison.OrdinalIgnoreCase)
 
+    let private connectionString (path: string) mode =
+        let builder = SqliteConnectionStringBuilder()
+        builder.DataSource <- path
+        builder.Mode <- mode
+        builder.Pooling <- false
+        builder.ForeignKeys <- Nullable true
+        builder.DefaultTimeout <- 5
+        builder.ConnectionString
+
     let private connectionSettings environment allowCreate =
         let configured = Environment.GetEnvironmentVariable("DATABASE_PATH")
         let path = if isNull configured && canInitialize environment then "game.db" else configured
@@ -27,13 +36,8 @@ module Database =
             invalidOp "DATABASE_PATH must identify a persistent SQLite file."
         if not (canInitialize environment) && not (Path.IsPathFullyQualified(path)) then
             invalidOp "Production DATABASE_PATH must be an absolute persistent SQLite file path."
-        let builder = SqliteConnectionStringBuilder()
-        builder.DataSource <- Path.GetFullPath(path)
-        builder.Mode <- if allowCreate && canInitialize environment then SqliteOpenMode.ReadWriteCreate else SqliteOpenMode.ReadWrite
-        builder.Pooling <- false
-        builder.ForeignKeys <- Nullable true
-        builder.DefaultTimeout <- 5
-        builder.ConnectionString
+        let mode = if allowCreate && canInitialize environment then SqliteOpenMode.ReadWriteCreate else SqliteOpenMode.ReadWrite
+        connectionString (Path.GetFullPath(path)) mode
 
     let private configureConnection (connection: SqliteConnection) =
         use journal = connection.CreateCommand()
@@ -55,11 +59,10 @@ module Database =
             connection.Dispose()
             reraise ()
 
-    let runMigrationsForEnvironment environment =
-        let connectionString = connectionSettings environment true
+    let private migrate connectionString requireProduction =
         use connection = new SqliteConnection(connectionString)
         connection.Open()
-        SqliteSchema.validate connection (not (canInitialize environment))
+        SqliteSchema.validate connection requireProduction
         configureConnection connection
         let upgrader =
             DeployChanges.To
@@ -79,6 +82,25 @@ module Database =
         writable.ExecuteNonQuery() |> ignore
         transaction.Rollback()
         printfn "Database migrations completed successfully"
+
+    let runMigrationsForEnvironment environment =
+        migrate (connectionSettings environment true) (not (canInitialize environment))
+
+    let internal initializeAtPath path =
+        let settings = connectionString path SqliteOpenMode.ReadWrite
+        migrate settings false
+        use connection = new SqliteConnection(settings)
+        connection.Open()
+        use command = connection.CreateCommand()
+        command.CommandText <- "SELECT (SELECT COUNT(*) FROM users) + (SELECT COUNT(*) FROM matches)"
+        if Convert.ToInt64(command.ExecuteScalar()) <> 0L then
+            invalidOp "Fresh initialization must not seed player or match records."
+        command.CommandText <- $"PRAGMA application_id = {SqliteSchema.freshApplicationId}"
+        command.ExecuteNonQuery() |> ignore
+        SqliteSchema.validate connection true
+        command.CommandText <- "PRAGMA journal_mode = DELETE"
+        if string (command.ExecuteScalar()) <> "delete" then
+            invalidOp "Fresh initialization must finish without WAL sidecars."
 
     let runMigrations () = runMigrationsForEnvironment (environmentName ())
 
