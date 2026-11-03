@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 
 WORKDIR /app
 COPY --from=api-builder /publish .
+COPY LICENSE THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.txt /usr/share/doc/rngwars/
 
 
 EXPOSE 5000
