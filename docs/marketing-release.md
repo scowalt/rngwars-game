@@ -8,7 +8,7 @@ current source revision and trusted-main workflow revision are rechecked before 
 
 - `Marketing release` runs from main after the candidate workflow, or by explicit producer run ID.
   Manual dispatch defaults to `validate`. `preflight` checks protected bindings and writes encrypted
-  evidence without provider mutations. `deploy` additionally requires
+  evidence without changing the Worker or its triggers. `deploy` additionally requires
   `MARKETING_RELEASE_ENABLED=true`.
 - Production and preview use separate main-only environments with owner review. The administrative
   bypass option is disabled. Self-review is allowed for the single-maintainer workflow; normal
@@ -20,9 +20,10 @@ current source revision and trusted-main workflow revision are rechecked before 
 - Private service bindings and credentials are environment secrets, not repository variables or
   checked-in configuration. Default CI and preparation remain read-only. Bun executable caching is
   disabled in credential-bearing jobs; no application dependencies are installed there.
-- Both replaced native build triggers must exclude every branch, with their exact identities and a
-  complete idle build inventory verified. This fence is checked again before production promotion.
-  Trigger changes are an operator cutover step, not an automatic permission probe.
+- The exact Worker's native trigger inventory must be empty, and its complete build inventory must
+  be idle. Any remaining or newly connected trigger blocks release regardless of branch/path
+  filters. This fence is checked again before production promotion. Disconnecting/removing old
+  triggers is a separately reviewed operator cutover step, not an automatic permission probe.
 
 ## Provider operations
 
@@ -57,10 +58,26 @@ a bounded receipt. Use it locally with the dedicated secret-manager configuratio
 in argv or commit the decrypted directory. Key rotation must retain keys needed for retained
 evidence.
 
-Before restoring native trigger filters, disable/drain the replacement controller. Preserve the
-saved filters and active version. Do not clear attempt tags or initialize/reset application data to
-make a failed release pass. Data-bearing game recovery has independent backup and artifact approval
-gates.
+Before reconnecting/recreating native triggers, disable/drain the replacement controller. Preserve
+complete trigger configuration, build-token references, variables, repository linkage, relevant
+history evidence and the active version. Recreated trigger IDs may differ; reconcile bindings and
+verify readback before restoring automation. Removing a trigger cancels unfinished builds, so verify
+an idle queue first. Do not clear attempt tags or initialize/reset application data to make a failed
+release pass. Data-bearing game recovery has independent backup and artifact approval gates.
+
+## Why branch/path filters are not a fence
+
+The
+[Builds troubleshooting guide](https://developers.cloudflare.com/workers/ci-cd/builds/troubleshoot/#invalid-request-body-12002-when-updating-branch-patterns)
+restricts production triggers to a single literal branch with no exclusions. Legacy non-production
+triggers include `*` but exclude only literal branch names. The previously proposed wildcard branch
+exclusion is unsupported and produces error12002; the generic API schema alone does not capture this
+constraint.
+
+[Build watch paths](https://developers.cloudflare.com/workers/ci-cd/builds/build-watch-paths/) are
+also insufficient: Cloudflare bypasses them for empty pushes,3000+ file changes or20+ commits. The
+release gate therefore requires actual trigger absence, not a filter that appears to disable builds.
+The consumer never deletes triggers itself and receives no new build-control capability.
 
 ## Current behavior
 

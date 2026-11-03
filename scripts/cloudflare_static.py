@@ -88,9 +88,8 @@ def inspect_worker(client, binding):
 def fenced(client, binding):
     inspect_worker(client, binding)
     value = client.request("GET", f"/builds/workers/{binding['worker_tag']}/triggers")
-    triggers = value["triggers"] if isinstance(value, dict) else value
-    require(len(triggers) == len(binding["native_trigger_ids"]) and {t["trigger_uuid"] for t in triggers} == set(binding["native_trigger_ids"]), "controller_inventory_drift")
-    require(all(t["external_script_id"] == binding["worker_tag"] and t["branch_excludes"] == ["*"] for t in triggers), "native_controller_not_fenced")
+    triggers = value.get("triggers") if isinstance(value, dict) else value
+    require(isinstance(triggers, list) and not triggers, "native_controller_not_fenced")
     seen = set()
     for page in range(1, 6):
         value = client.request("GET", f"/builds/workers/{binding['worker_tag']}/builds?per_page=200&page={page}")
