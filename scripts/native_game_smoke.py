@@ -79,16 +79,26 @@ def main():
         command(["docker", "volume", "create", "--label", "rngwars.synthetic=true", volume])
         created = True
         command(["docker", "run", "--rm", "--network", "none", "--read-only", "--user", "0:0", "--entrypoint", "/bin/sh", "--mount", f"type=volume,src={volume},dst=/data", args.image, "-c", "chown 10001:10001 /data && chmod 0700 /data"])
-        def start(label, environment, database="/data/game.db"):
+        def start(label, environment, database="/data/game.db", init=False):
             name = prefix + "-" + label
             containers.append(name)
-            command(["docker", "run", "-d", "--name", name, "--network", "none", "--read-only", "--ulimit", "core=0", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m", "--mount", f"type=volume,src={volume},dst=/data", "-e", "DOTNET_URLS=http://127.0.0.1:5000", "-e", "DOTNET_ENVIRONMENT=" + environment, "-e", "ASPNETCORE_ENVIRONMENT=" + environment, "-e", "DATABASE_PATH=" + database, "-e", "SENTRY_DSN=", args.image])
+            command(["docker", "run", "-d", *( ["--init"] if init else []), "--name", name, "--network", "none", "--read-only", "--ulimit", "core=0", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m", "--mount", f"type=volume,src={volume},dst=/data", "-e", "DOTNET_URLS=http://127.0.0.1:5000", "-e", "DOTNET_ENVIRONMENT=" + environment, "-e", "ASPNETCORE_ENVIRONMENT=" + environment, "-e", "DATABASE_PATH=" + database, "-e", "SENTRY_DSN=", args.image])
             return name
         seed = start("empty-schema", "Testing")
         ready(seed)
         command(["docker", "stop", "--time", "10", seed])
         empty = start("refuse-empty", "Production")
-        result = command(["docker", "wait", empty], timeout=40)
+        try:
+            result = command(["docker", "wait", empty], timeout=40)
+        except subprocess.TimeoutExpired:
+            state = json.loads(command(["docker", "inspect", empty]).stdout)[0]["State"]
+            print("[DEBUG-arm-exit] " + json.dumps({key: state[key] for key in ["Status", "Running", "ExitCode", "OOMKilled"]}))
+            print("[DEBUG-arm-exit] " + command(["docker", "top", empty, "-o", "pid,ppid,comm"], required=False).stdout)
+            command(["docker", "stop", "--time", "2", empty])
+            comparison = start("refuse-empty-init", "Production", init=True)
+            trial = command(["docker", "wait", comparison], timeout=40)
+            print("[DEBUG-arm-exit] init_variant_exit=" + trial.stdout.strip())
+            raise
         require(result.stdout.strip().isdigit() and int(result.stdout.strip()) != 0, "empty_production_database_accepted")
         checks.append("production_rejects_empty_population")
         seed = start("seed", "Testing")
@@ -144,6 +154,6 @@ if __name__ == "__main__":
     except Failed as error:
         print("Native game validation failed: " + str(error))
         raise SystemExit(1)
-    except Exception:
-        print("Native game validation failed; synthetic identity/log values withheld")
+    except Exception as error:
+        print("Native game validation failed: " + type(error).__name__ + "; synthetic identity/log values withheld")
         raise SystemExit(1)
