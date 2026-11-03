@@ -3,6 +3,7 @@ services:
     image: ${RNGWARS_GAME_IMAGE:?Set the separately approved immutable game image digest}
     container_name: rngwars-game
     user: "10001:10001"
+    init: true
     restart: unless-stopped
     ports:
       - "127.0.0.1:${RNGWARS_BIND_PORT:?Set the approved loopback port}:5000"
