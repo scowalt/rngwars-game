@@ -11,12 +11,18 @@ test identity has been created. The token and changed username must survive a re
 Production mode. Practice-match creation, bundled frontend delivery and included legal notices are
 checked. Production must also reject a missing database without creating it.
 
+The deployment template and fixture both enable Docker's init process (`init: true` / `--init`). A
+native comparison found that a fatal startup exception left .NET running as PID 1; changing only the
+init setting made the same image/database exit with code134. This preserves the database refusal
+rather than accepting a hung process as a successful negative test. Direct image operators must also
+use `--init`. No database guard was weakened and no live deployment was changed.
+
 Every application container uses `--network none`, no published ports and a read-only root
 filesystem. HTTP requests run inside that container's own loopback namespace via `docker exec`; this
 is not a browser-accessible development server or a public/Tailscale endpoint. No local
-server/container is started by the agent. Source credentials, analytics and error reporting are
-absent. Synthetic bearer values are kept out of command arguments and evidence; failure logs redact
-synthetic UUIDs.
+server/container is started by the agent. Service credentials, analytics and error reporting are
+absent from the fixture. Synthetic bearer values are kept out of command arguments and evidence;
+failure logs redact synthetic UUIDs.
 
 Only a bounded JSON receipt is uploaded. It records the actual checkout revision (a PR merge
 revision for PR runs), native/image architecture, local image identity and completed checks. It is

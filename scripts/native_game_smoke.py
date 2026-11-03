@@ -79,26 +79,16 @@ def main():
         command(["docker", "volume", "create", "--label", "rngwars.synthetic=true", volume])
         created = True
         command(["docker", "run", "--rm", "--network", "none", "--read-only", "--user", "0:0", "--entrypoint", "/bin/sh", "--mount", f"type=volume,src={volume},dst=/data", args.image, "-c", "chown 10001:10001 /data && chmod 0700 /data"])
-        def start(label, environment, database="/data/game.db", init=False):
+        def start(label, environment, database="/data/game.db"):
             name = prefix + "-" + label
             containers.append(name)
-            command(["docker", "run", "-d", *( ["--init"] if init else []), "--name", name, "--network", "none", "--read-only", "--ulimit", "core=0", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m", "--mount", f"type=volume,src={volume},dst=/data", "-e", "DOTNET_URLS=http://127.0.0.1:5000", "-e", "DOTNET_ENVIRONMENT=" + environment, "-e", "ASPNETCORE_ENVIRONMENT=" + environment, "-e", "DATABASE_PATH=" + database, "-e", "SENTRY_DSN=", args.image])
+            command(["docker", "run", "-d", "--init", "--name", name, "--network", "none", "--read-only", "--ulimit", "core=0", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m", "--mount", f"type=volume,src={volume},dst=/data", "-e", "DOTNET_URLS=http://127.0.0.1:5000", "-e", "DOTNET_ENVIRONMENT=" + environment, "-e", "ASPNETCORE_ENVIRONMENT=" + environment, "-e", "DATABASE_PATH=" + database, "-e", "SENTRY_DSN=", args.image])
             return name
         seed = start("empty-schema", "Testing")
         ready(seed)
         command(["docker", "stop", "--time", "10", seed])
         empty = start("refuse-empty", "Production")
-        try:
-            result = command(["docker", "wait", empty], timeout=40)
-        except subprocess.TimeoutExpired:
-            state = json.loads(command(["docker", "inspect", empty]).stdout)[0]["State"]
-            print("[DEBUG-arm-exit] " + json.dumps({key: state[key] for key in ["Status", "Running", "ExitCode", "OOMKilled"]}))
-            print("[DEBUG-arm-exit] " + command(["docker", "top", empty, "-o", "pid,ppid,comm"], required=False).stdout)
-            command(["docker", "stop", "--time", "2", empty])
-            comparison = start("refuse-empty-init", "Production", init=True)
-            trial = command(["docker", "wait", comparison], timeout=40)
-            print("[DEBUG-arm-exit] init_variant_exit=" + trial.stdout.strip())
-            raise
+        result = command(["docker", "wait", empty], timeout=40)
         require(result.stdout.strip().isdigit() and int(result.stdout.strip()) != 0, "empty_production_database_accepted")
         checks.append("production_rejects_empty_population")
         seed = start("seed", "Testing")
@@ -116,6 +106,8 @@ def main():
         command(["docker", "stop", "--time", "10", seed])
         production = start("production", "Production")
         ready(production)
+        host = json.loads(command(["docker", "inspect", production]).stdout)[0]["HostConfig"]
+        require(host["Init"] is True and host["NetworkMode"] == "none" and not host["PortBindings"], "fixture_container_isolation")
         status, profile = request(production, "GET", "/api/users/me", token)
         require(status == 200 and profile["id"] == user_id and profile["username"] == "NativeArmFixture", "persistent_token_roundtrip_failed")
         status, page = request(production, "GET", "/")
@@ -128,7 +120,7 @@ def main():
         require(result.stdout.strip().isdigit() and int(result.stdout.strip()) != 0, "missing_production_database_accepted")
         command(["docker", "run", "--rm", "--network", "none", "--read-only", "--entrypoint", "/bin/sh", "--mount", f"type=volume,src={volume},dst=/data", args.image, "-c", "test ! -e /data/missing.db"])
         checks.append("production_does_not_create_missing_DB")
-        result = {"source_revision": os.environ["GITHUB_SHA"], "image_id": image["Id"], "native_runner_architecture": platform.machine(), "image_architecture": image["Architecture"], "checks": checks, "synthetic_data_only": True, "published_host_ports": False, "external_container_network": False, "production_host_access": False}
+        result = {"source_revision": os.environ["GITHUB_SHA"], "image_id": image["Id"], "native_runner_architecture": platform.machine(), "image_architecture": image["Architecture"], "container_init": host["Init"], "checks": checks, "synthetic_data_only": True, "published_host_ports": False, "external_container_network": False, "production_host_access": False}
         path = Path(os.environ["RUNNER_TEMP"]) / "native-game-result.json"
         with path.open("x") as handle:
             json.dump(result, handle, indent=2)

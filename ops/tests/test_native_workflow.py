@@ -8,6 +8,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class NativeWorkflowTests(unittest.TestCase):
+    def test_deployment_and_native_fixture_use_init_for_fatal_startup_exit(self):
+        compose = yaml.safe_load((ROOT / "ops/production/docker-compose.yml").read_text())
+        self.assertIs(compose["services"]["game"]["init"], True)
+        source = (ROOT / "scripts/native_game_smoke.py").read_text()
+        self.assertIn('"run", "-d", "--init"', source)
+        self.assertIn('host["Init"] is True', source)
+        self.assertNotIn("[DEBUG-", source)
+
     def test_native_image_validation_has_no_publication_or_private_capability(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/game-native.yml").read_text())
         self.assertEqual(workflow["permissions"], {"contents": "read"})
