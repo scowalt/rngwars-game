@@ -84,9 +84,11 @@ must use an exact digest.
 Skopeo copies the validated OCI image with explicit native-platform selection and digest
 preservation. It receives a private authentication-file path, not credentials on argv. Custom
 registry metadata requests use bounded captured output and do not follow redirects with credentials.
-The resulting manifest digest and config reference are checked before signing. The owned
-authentication file is removed by the workflow's always-run cleanup; credentials never enter
-publication artifacts.
+The resulting manifest digest and config reference are checked before signing. The pinned
+attestation SDK reads `HOME/.docker/config.json`, while registry tools also support `DOCKER_CONFIG`.
+A fresh private signing home aligns both paths; only the signing action receives that HOME override.
+The runner's default Docker configuration is untouched. Always-run cleanup checks the owned home's
+marker/permissions before removing it; credentials never enter publication artifacts.
 
 The pinned GitHub attestation action signs the published digest and stores genuine provenance in the
 registry. Its optional storage record and summary are disabled. Verification invokes the actual
