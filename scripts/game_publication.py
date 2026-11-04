@@ -24,6 +24,7 @@ from marketing_producer import client_environment, identifier, output
 REPOSITORY = "scowalt/rngwars-game"
 WORKFLOW = REPOSITORY + "/.github/workflows/game-publication.yml@refs/heads/main"
 IMAGE = "ghcr.io/scowalt/rngwars-game-releases"
+OPERATION_STAGE = "resolve"
 
 
 def context(env):
@@ -123,17 +124,25 @@ def reserve(info):
     selected = [rule for rule in rules if rule["name"] == "Immutable release attempts" and rule["target"] == "tag" and rule["enforcement"] == "active"]
     require(len(selected) == 1, "game_attempt_rule_missing")
     rule = metadata.github("/rulesets/" + str(selected[0]["id"]))
-    require(rule["conditions"]["ref_name"] == {"include": ["refs/tags/release-attempt/**"], "exclude": []} and {value["type"] for value in rule["rules"]} == {"update", "deletion"} and not rule["bypass_actors"], "game_attempt_rule_changed")
+    require(rule.get("enforcement") == "active" and rule.get("target") == "tag" and rule["conditions"]["ref_name"] == {"include": ["refs/tags/release-attempt/**"], "exclude": []} and {value["type"] for value in rule["rules"]} == {"update", "deletion"}, "game_attempt_rule_changed")
+    if "current_user_can_bypass" in rule:
+        require(rule["current_user_can_bypass"] == "never", "game_attempt_publisher_can_bypass")
+    if "bypass_actors" in rule:
+        require(rule["bypass_actors"] == [], "game_attempt_bypass_actors")
+        verification = "visible_empty_actor_list"
+    else:
+        require(rule.get("current_user_can_bypass") == "never", "game_attempt_bypass_visibility")
+        verification = "effective_never"
     require(metadata.github("/git/matching-refs/tags/" + name) == [], "game_attempt_already_reserved")
     def write(path, body):
         require(path in {"/git/tags", "/git/refs"}, "game_attempt_write_route")
         result = subprocess.run(["gh", "api", "--hostname", "github.com", "--method", "POST", "--input", "-", "repos/" + REPOSITORY + path], input=json.dumps(body).encode(), env=client_environment(), capture_output=True, timeout=45)
         require(result.returncode == 0 and len(result.stdout) <= 65536, "game_attempt_write_failed_no_retry")
         return json.loads(result.stdout, object_pairs_hook=metadata.unique_object)
-    tag = write("/git/tags", {"tag": name, "message": json.dumps({"version": 1, **info}, sort_keys=True), "object": info["source_revision"], "type": "commit"})
+    tag = write("/git/tags", {"tag": name, "message": json.dumps({"version": 1, **info, "ruleset_verification": verification}, sort_keys=True), "object": info["source_revision"], "type": "commit"})
     reference = write("/git/refs", {"ref": "refs/tags/" + name, "sha": tag["sha"]})
     require(reference["ref"] == "refs/tags/" + name and reference["object"]["sha"] == tag["sha"], "game_attempt_receipt")
-    return name
+    return name, verification
 
 
 class Registry:
@@ -185,17 +194,25 @@ class Registry:
 
 
 def publish(info, destination, env):
+    global OPERATION_STAGE
+    OPERATION_STAGE = "review"
     publication_authority(info, env)
+    OPERATION_STAGE = "registry_auth"
     registry = Registry(env)
+    OPERATION_STAGE = "registry_lookup"
     status, _ = registry.manifest(info["source_revision"])
     require(status == 404, "game_registry_tag_not_absent_" + str(status))
     require(metadata.github("/git/ref/heads/main")["object"]["sha"] == info["source_revision"], "stale_game_publication")
+    OPERATION_STAGE = "attempt_intent"
     with (Path(destination) / "publication-intent.json").open("x") as stream:
         json.dump(info, stream, sort_keys=True)
-    attempt = reserve(info)
+    OPERATION_STAGE = "attempt_reservation"
+    attempt, rule_verification = reserve(info)
+    OPERATION_STAGE = "registry_push"
     registry.push(Path(destination) / "image.oci.tar", info["source_revision"])
+    OPERATION_STAGE = "registry_readback"
     registry.verify(info)
-    return {**info, "status": "image_published_not_yet_attested", "image_repository": IMAGE, "attempt_tag": attempt}
+    return {**info, "status": "image_published_not_yet_attested", "image_repository": IMAGE, "attempt_tag": attempt, "ruleset_verification": rule_verification}
 
 
 def verify_published(identity, receipt, env):
@@ -220,6 +237,7 @@ def verify_published(identity, receipt, env):
 
 
 def main():
+    global OPERATION_STAGE
     os.umask(0o077)
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     parser = argparse.ArgumentParser()
@@ -234,11 +252,14 @@ def main():
     args = parser.parse_args()
     info = resolve(os.environ)
     if args.command in {"prepare", "publish"}:
+        OPERATION_STAGE = "candidate"
         info = prepare(info, identifier(args.artifact_id), args.destination)
     if args.command == "publish":
         info = publish(info, args.destination, os.environ)
     if args.command == "verify-published":
+        OPERATION_STAGE = "attestation"
         info = verify_published(info, args.receipt, os.environ)
+    OPERATION_STAGE = "outputs"
     if os.environ.get("GITHUB_OUTPUT"):
         values = {"source_revision": info["source_revision"]}
         if args.command in {"prepare", "publish"}:
@@ -253,6 +274,9 @@ if __name__ == "__main__":
     except Blocked as error:
         print("Game publication blocked: " + str(error), file=sys.stderr)
         raise SystemExit(1)
-    except Exception:
-        print("Game publication blocked: local_or_provider_failure", file=sys.stderr)
+    except Exception as error:
+        kind = type(error).__name__
+        if kind not in {"KeyError", "TypeError", "ValueError", "JSONDecodeError", "FileNotFoundError", "FileExistsError", "PermissionError", "TimeoutExpired", "OSError"}:
+            kind = "unexpected_failure"
+        print("Game publication blocked: " + OPERATION_STAGE + "_" + kind, file=sys.stderr)
         raise SystemExit(1)

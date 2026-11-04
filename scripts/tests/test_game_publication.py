@@ -82,7 +82,7 @@ class PublicationCLITests(unittest.TestCase):
         self.env["EXPECTED_ARCHIVE_SHA256"] = hashlib.sha256(archive(files)).hexdigest()
         self.env["GAME_PUBLICATION_ENABLED"] = "true"
         attempt = "release-attempt/game-publication/" + REVISION
-        self.responses.update({"/environments/game-publication": {"id": 400, "name": "game-publication", "can_admins_bypass": False, "deployment_branch_policy": {"protected_branches": False, "custom_branch_policies": True}, "protection_rules": [{"type": "required_reviewers", "prevent_self_review": False, "reviewers": [{"type": "User", "reviewer": {"id": 1100550}}]}]}, "/environments/game-publication/deployment-branch-policies": {"total_count": 1, "branch_policies": [{"name": "main", "type": "branch"}]}, "/actions/runs/77/approvals": [{"state": "approved", "user": {"id": 1100550}, "environments": [{"id": 400, "name": "game-publication"}]}], "/rulesets?per_page=100": [{"id": 50, "name": "Immutable release attempts", "target": "tag", "enforcement": "active"}], "/rulesets/50": {"conditions": {"ref_name": {"include": ["refs/tags/release-attempt/**"], "exclude": []}}, "rules": [{"type": "update"}, {"type": "deletion"}], "bypass_actors": []}, "/git/matching-refs/tags/" + attempt: [], "/git/tags": {"sha": "c" * 40}, "/git/refs": {"ref": "refs/tags/" + attempt, "object": {"sha": "c" * 40}}})
+        self.responses.update({"/environments/game-publication": {"id": 400, "name": "game-publication", "can_admins_bypass": False, "deployment_branch_policy": {"protected_branches": False, "custom_branch_policies": True}, "protection_rules": [{"type": "required_reviewers", "prevent_self_review": False, "reviewers": [{"type": "User", "reviewer": {"id": 1100550}}]}]}, "/environments/game-publication/deployment-branch-policies": {"total_count": 1, "branch_policies": [{"name": "main", "type": "branch"}]}, "/actions/runs/77/approvals": [{"state": "approved", "user": {"id": 1100550}, "environments": [{"id": 400, "name": "game-publication"}]}], "/rulesets?per_page=100": [{"id": 50, "name": "Immutable release attempts", "target": "tag", "enforcement": "active"}], "/rulesets/50": {"enforcement": "active", "target": "tag", "current_user_can_bypass": "never", "conditions": {"ref_name": {"include": ["refs/tags/release-attempt/**"], "exclude": []}}, "rules": [{"type": "update"}, {"type": "deletion"}], "bypass_actors": []}, "/git/matching-refs/tags/" + attempt: [], "/git/tags": {"sha": "c" * 40}, "/git/refs": {"ref": "refs/tags/" + attempt, "object": {"sha": "c" * 40}}})
         return attempt
 
     def test_publishes_only_after_actual_environment_review_and_immutable_reservation(self):
@@ -162,6 +162,52 @@ class PublicationCLITests(unittest.TestCase):
                 self.assertFalse((self.root / "writes.jsonl").exists())
                 self.assertFalse((self.root / "pushed").exists())
                 self.assertNotIn("synthetic-github-package-token", result.stdout + result.stderr)
+
+    def test_hidden_bypass_actor_list_requires_effective_nonbypass_permission(self):
+        self.publication_capability()
+        rule = self.responses["/rulesets/50"]
+        del rule["bypass_actors"]
+        rule["current_user_can_bypass"] = "never"
+        result = self.invoke("publish", str(self.root / "candidate"), "--artifact-id", "99")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "image_published_not_yet_attested")
+
+    def test_published_receipt_distinguishes_effective_permission_from_full_actor_visibility(self):
+        self.publication_capability()
+        del self.responses["/rulesets/50"]["bypass_actors"]
+        result = self.invoke("publish", str(self.root / "candidate"), "--artifact-id", "99")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["ruleset_verification"], "effective_never")
+
+    def test_unknown_effective_bypass_and_visible_exceptions_fail_before_reservation(self):
+        for case in ["unknown", "always", "exempt", "pull_requests_only", "visible-exception", "disabled"]:
+            with self.subTest(case=case):
+                self.publication_capability()
+                self.env["DOCKER_CONFIG"] = str(self.root / ("auth-" + case))
+                rule = self.responses["/rulesets/50"]
+                if case == "visible-exception":
+                    rule["bypass_actors"] = [{"actor_type": "Integration", "actor_id": 1, "bypass_mode": "always"}]
+                elif case == "disabled":
+                    rule["enforcement"] = "disabled"
+                else:
+                    del rule["bypass_actors"]
+                    if case == "unknown":
+                        del rule["current_user_can_bypass"]
+                    else:
+                        rule["current_user_can_bypass"] = case
+                result = self.invoke("publish", str(self.root / ("candidate-" + case)), "--artifact-id", "99")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((self.root / "writes.jsonl").exists())
+                self.assertFalse((self.root / "pushed").exists())
+
+    def test_unexpected_failure_identifies_only_stage_and_error_class(self):
+        self.publication_capability()
+        del self.env["DOCKER_CONFIG"]
+        result = self.invoke("publish", str(self.root / "candidate"), "--artifact-id", "99")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("registry_auth_KeyError", result.stderr)
+        self.assertNotIn("synthetic-github-package-token", result.stdout + result.stderr)
+        self.assertFalse((self.root / "writes.jsonl").exists())
 
     def test_ambiguous_registry_failure_preserves_the_attempt_without_retry(self):
         attempt = self.publication_capability()
