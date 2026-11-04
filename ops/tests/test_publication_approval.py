@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/release_gate.py"
@@ -113,11 +114,19 @@ class ReleaseGateTests(unittest.TestCase):
             (area / "evidence.json").unlink()
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
 
-    def test_no_active_publisher_or_manual_alternative_is_exported(self):
+    def test_only_reviewed_game_job_can_publish_and_legacy_alternatives_stay_absent(self):
         self.assertFalse((ROOT / "scripts/manual-release.py").exists())
         self.assertFalse((ROOT / ".github/workflows/deploy-production.yml").exists())
+        publishers = set()
         for path in (ROOT / ".github/workflows").glob("*.yml"):
-            self.assertNotIn("packages: write", path.read_text())
+            workflow = yaml.safe_load(path.read_text())
+            self.assertNotEqual(workflow.get("permissions", {}).get("packages"), "write")
+            for name, job in workflow["jobs"].items():
+                if job.get("permissions", {}).get("packages") == "write":
+                    publishers.add((path.name, name))
+                    self.assertEqual(job["environment"], "game-publication")
+                    self.assertEqual(job["if"], "inputs.operation == 'publish'")
+        self.assertEqual(publishers, {("game-publication.yml", "publish")})
 
 
 if __name__ == "__main__":

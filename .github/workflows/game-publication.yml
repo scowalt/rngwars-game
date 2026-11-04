@@ -1,0 +1,217 @@
+name: Game image publication
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_revision:
+        description: Exact current main revision approved for this candidate
+        type: string
+        required: true
+      source_ci_run_id:
+        description: Successful first-attempt current-main CI run from the last day
+        type: string
+        required: true
+      operation:
+        description: Validate only or request protected publication
+        type: choice
+        options: [validate, publish]
+        default: validate
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: game-image-publication
+  cancel-in-progress: false
+
+env:
+  APPROVED_REVISION: ${{ inputs.approved_revision }}
+  SOURCE_CI_RUN_ID: ${{ inputs.source_ci_run_id }}
+  GAME_PUBLICATION_OPERATION: ${{ inputs.operation }}
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      source_revision: ${{ steps.resolve.outputs.source_revision }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Resolve exact approved main CI
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/game_publication.py resolve
+
+  native-build:
+    name: Build and exercise native image
+    needs: resolve
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.candidate.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.resolve.outputs.source_revision }}
+          persist-credentials: false
+      - name: Prepare isolated native tools and output
+        run: |
+          set -eu
+          test "$(uname -m)" = aarch64
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends skopeo
+          skopeo --version
+          mkdir -m 0700 "$RUNNER_TEMP/game-candidate"
+          version=0.19.1
+          cd "$RUNNER_TEMP"
+          asset="restic_${version}_linux_arm64.bz2"
+          base="https://github.com/restic/restic/releases/download/v${version}"
+          curl --fail --silent --show-error --location "$base/$asset" -o "$asset"
+          curl --fail --silent --show-error --location "$base/SHA256SUMS" -o SHA256SUMS
+          grep " $asset$" SHA256SUMS | sha256sum --check --strict
+          mkdir -p restic-bin
+          bzip2 --decompress --stdout "$asset" > restic-bin/restic
+          chmod 0555 restic-bin/restic
+          echo "$RUNNER_TEMP/restic-bin" >> "$GITHUB_PATH"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - name: Build the production OCI image without publication or signing
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        env:
+          DOCKER_BUILD_SUMMARY: "false"
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
+        with:
+          context: .
+          target: production
+          platforms: linux/arm64
+          push: false
+          provenance: false
+          sbom: false
+          outputs: type=oci,dest=${{ runner.temp }}/game-candidate/image.oci.tar,oci-mediatypes=true,compression=gzip
+          labels: |
+            org.opencontainers.image.source=https://github.com/scowalt/rngwars-game
+            org.opencontainers.image.revision=${{ github.sha }}
+          build-args: |
+            VITE_POSTHOG_KEY=
+            VITE_SENTRY_DSN=
+      - name: Validate OCI identity and exercise the exact native image
+        run: |
+          set -eu
+          python3 scripts/game_artifact.py inspect "$RUNNER_TEMP/game-candidate/image.oci.tar" --revision "$GITHUB_SHA"
+          skopeo --override-os linux --override-arch arm64 copy "oci-archive:$RUNNER_TEMP/game-candidate/image.oci.tar" "docker-daemon:rngwars-native:$GITHUB_SHA"
+          python3 scripts/native_game_smoke.py "rngwars-native:$GITHUB_SHA"
+          test ! -e "$RUNNER_TEMP/game-candidate/native-game-result.json"
+          mv "$RUNNER_TEMP/native-game-result.json" "$RUNNER_TEMP/game-candidate/native-game-result.json"
+          python3 scripts/game_artifact.py verify-native "$RUNNER_TEMP/game-candidate/image.oci.tar" --revision "$GITHUB_SHA" --native-receipt "$RUNNER_TEMP/game-candidate/native-game-result.json"
+      - name: Retain only the clean image and bounded synthetic receipt
+        id: candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: game-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/game-candidate/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: false
+
+  prepare:
+    needs: [resolve, native-build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      image_sha256: ${{ steps.prepare.outputs.image_sha256 }}
+      archive_sha256: ${{ steps.prepare.outputs.archive_sha256 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Independently validate provider identity and native artifact
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_ARTIFACT_ID: ${{ needs.native-build.outputs.artifact_id }}
+        run: python3 scripts/game_publication.py prepare "$RUNNER_TEMP/accepted-game" --artifact-id "$SOURCE_ARTIFACT_ID"
+      - name: Show the exact candidate before protected review
+        env:
+          IMAGE_SHA256: ${{ steps.prepare.outputs.image_sha256 }}
+          ARCHIVE_SHA256: ${{ steps.prepare.outputs.archive_sha256 }}
+        run: |
+          printf 'Source: %s\nImage: sha256:%s\nOCI archive: %s\nNo publication or deployment performed by this job.\n' "$GITHUB_SHA" "$IMAGE_SHA256" "$ARCHIVE_SHA256" >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    needs: [resolve, native-build, prepare]
+    if: inputs.operation == 'publish'
+    environment: game-publication
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Install registry transport before credential use
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends skopeo
+          skopeo --version
+          printf 'DOCKER_CONFIG=%s/game-registry-auth-%s-%s\n' "$RUNNER_TEMP" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+      - name: Recheck review, reserve the attempt and publish the exact digest
+        id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_ARTIFACT_ID: ${{ needs.native-build.outputs.artifact_id }}
+          EXPECTED_IMAGE_DIGEST: sha256:${{ needs.prepare.outputs.image_sha256 }}
+          EXPECTED_ARCHIVE_SHA256: ${{ needs.prepare.outputs.archive_sha256 }}
+        run: python3 scripts/game_publication.py publish "$RUNNER_TEMP/publication-candidate" --artifact-id "$SOURCE_ARTIFACT_ID" > "$RUNNER_TEMP/game-publication-published.json"
+      - name: Attest the published image from the reviewed trusted-main job
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-name: ghcr.io/scowalt/rngwars-game-releases
+          subject-digest: sha256:${{ steps.push.outputs.image_sha256 }}
+          push-to-registry: true
+          create-storage-record: false
+          show-summary: false
+      - name: Verify genuine registry provenance and exact invocation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/game_publication.py verify-published "$RUNNER_TEMP/game-publication-published.json" > "$RUNNER_TEMP/game-publication-verified.json"
+      - name: Retain bounded public publication evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: game-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/game-publication-verified.json
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: false
+      - name: Remove this job's registry authentication file
+        if: always()
+        run: |
+          set -eu
+          directory="$RUNNER_TEMP/game-registry-auth-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          test ! -L "$directory"
+          if test -f "$directory/.game-publication-owner"; then
+            IFS= read -r owner < "$directory/.game-publication-owner"
+            test "$owner" = "$GITHUB_RUN_ID"
+            rm -f -- "$directory/config.json" "$directory/.game-publication-owner"
+            rmdir -- "$directory"
+          fi

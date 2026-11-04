@@ -1,8 +1,11 @@
 # GitHub Actions release and migration boundary
 
 The intended end state is one authoritative public development repository with CI and CD owned by
-GitHub Actions. The current preparation includes portable tooling, CI source and a tested context
-guard. No publisher/deployer is enabled until the project-specific controller cutover is approved.
+GitHub Actions. [Marketing releases](marketing-release.md) have a separate protected controller.
+[Game image publication](game-image-publication.md) isolates native builds from reviewed registry
+and signing privileges; its default operation validates without publishing. Enabling a publisher
+still requires its project-specific controller, credential and exact-artifact acceptance. Game
+deployment and public activation remain separate.
 
 ## Context guard is not a publisher
 
@@ -21,18 +24,21 @@ approval of the exact built-asset hash. All of these fields must come from trust
 workflow and evidence adapters, never unchecked PR inputs or a caller-written claim of successful
 checks.
 
-The future controller must independently verify original evidence identity and integrity, registry
-state, source/native architecture and reviewer/environment authorization before using the guard. The
-current tests exercise rejection/validation contracts with synthetic evidence; they are not release
-acceptance. Missing proof remains a blocker, not permission to fabricate `passed` values.
+An actual controller must independently verify original evidence identity and integrity, registry
+state, source/native architecture and reviewer/environment authorization. The context guard's tests
+exercise rejection/validation contracts with synthetic evidence; they are not release acceptance.
+The game publication adapter separately checks actual GitHub metadata, native OCI identity, reviewed
+environment history and registry provenance; its synthetic provider tests still require real
+protected publication/readback before operational acceptance. Missing proof remains a blocker, not
+permission to fabricate `passed` values.
 
 ## No second routine publisher
 
 The former manual registry publisher is not exported. Its private source and historical verification
 records remain preserved. The successor guard tests retain owner/repository/ref/revision, freshness,
 missing/tampered evidence, no-overwrite/no-retry, architecture and digest-approval intent. This does
-not claim every original publisher behavior is implemented in a new controller; the actual publish,
-verification-evidence adapter and deployment implementations require review and real gated tests.
+not by itself implement registry writes. The separate game publication workflow and adapter require
+real gated execution and provenance readback; a deployment controller remains a distinct capability.
 
 Game image publication and deployment are separate authorizations. Keep immutable full-SHA tags and
 full digest identity; no automatic `latest` updater. Selecting a native runner does not prove a
