@@ -14,6 +14,8 @@ class GamePublicationWorkflowTests(unittest.TestCase):
         self.assertEqual(set(triggers), {"workflow_dispatch"})
         self.assertEqual(triggers["workflow_dispatch"]["inputs"]["operation"]["default"], "validate")
         self.assertEqual(workflow["permissions"], {"contents": "read"})
+        self.assertEqual(workflow["env"]["GAME_PUBLICATION_ENABLED"], "${{ vars.GAME_PUBLICATION_ENABLED }}")
+        self.assertNotIn("GAME_PUBLICATION_ENABLED", triggers["workflow_dispatch"]["inputs"])
         self.assertFalse(workflow["concurrency"]["cancel-in-progress"])
         jobs = workflow["jobs"]
         native = jobs["native-build"]
