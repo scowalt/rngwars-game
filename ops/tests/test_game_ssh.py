@@ -33,6 +33,21 @@ class PrivateSSHConfigurationTests(unittest.TestCase):
             self.assertNotIn("acceptenv", settings)
             self.assertNotIn("subsystem", settings)
 
+    def test_rendered_probe_unit_provides_OpenSSH_runtime_without_starting_a_service(self):
+        template = ROOT / "ops" / "production" / "game-deployment" / "rngwars-game-ssh.service"
+        with tempfile.TemporaryDirectory() as directory:
+            area = Path(directory)
+            text = template.read_text().format(configuration_file=area / "sshd.conf")
+            unit = area / "rngwars-game-ssh.service"
+            unit.write_text(text)
+            result = subprocess.run(["systemd-analyze", "verify", str(unit)], capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("RuntimeDirectory=rngwars-game-ssh sshd", text)
+            self.assertIn("RuntimeDirectoryPreserve=yes", text)
+            self.assertIn("NoNewPrivileges=yes", text)
+            self.assertIn("ProtectSystem=strict", text)
+            self.assertNotIn("ExecStartPre=", text)
+
 
 if __name__ == "__main__":
     unittest.main()
