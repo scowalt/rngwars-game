@@ -1,0 +1,24 @@
+[Unit]
+Description=RNGWars restricted private SSH transport
+After=network-online.target tailscaled.service
+Requires=tailscaled.service
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/sshd -D -e -f {configuration_file}
+Restart=on-failure
+RestartSec=5
+UMask=0077
+RuntimeDirectory=rngwars-game-ssh sshd
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target

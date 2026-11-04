@@ -82,5 +82,61 @@ runs no subprocesses and accesses no database, backup credentials or Docker sock
 account must not receive those privileges merely to test transport.
 
 An echo from this probe is not application health, a release approval or a completed deployment. The
-protected OIDC workflow, actual network isolation, privileged fixed host controller, recovery checks
-and safe rollback still need independent implementation and operational acceptance.
+privileged fixed host controller, recovery checks and safe rollback still need separate
+implementation and operational acceptance.
+
+The companion `rngwars-game-ssh.service` is a template for the unprivileged probe, not the later
+privileged deployment command. Render `configuration_file` privately. It provides OpenSSH's required
+runtime directory as well as its project PID directory and preserves them on stop; no existing SSH
+configuration or keys are replaced. `NoNewPrivileges=yes` intentionally prevents privilege
+escalation from the probe. Validate the unit/configuration before installation, then verify actual
+key, forced-command, forwarding, PTY and subsystem behavior without modifying production data.
+
+## Protected read-only workflow
+
+`.github/workflows/game-deployment.yml` currently implements **preflight only**, despite its
+reserved deployment-controller filename. Manual dispatch defaults to `verify-release`; it validates
+exact current main CI and fetches/verifies the selected published image without private capability.
+
+The optional `private-preflight` job additionally requires:
+
+- `GAME_PRIVATE_PREFLIGHT_ENABLED=true` injected from repository configuration, not dispatch inputs.
+- The pre-existing main-only, owner-reviewed `game-production` environment with no admin bypass.
+- An actual owner approval for this first-attempt dispatch and a GitHub-hosted job.
+- Two environment-scoped secrets: `GAME_NETWORK_BINDING` and `GAME_SSH_PRIVATE_KEY`. Never use a
+  personal administrator key, historical package credential or long-lived Tailscale secret.
+
+The private binding is a bounded JSON object with these exact fields:
+
+| Field               | Binding                                                                  |
+| ------------------- | ------------------------------------------------------------------------ |
+| `client_id`         | Dedicated OIDC Client ID; no auth key or OAuth secret                    |
+| `audience`          | Exact generated `api.tailscale.com/<client_id>` audience                 |
+| `target_ipv4`       | Independently approved Tailscale address of the selected host            |
+| `target_port`       | Approved separate OpenSSH listener port; not Tailscale SSH port 22       |
+| `ssh_user`          | Dedicated `rngwars-deploy` account                                       |
+| `host_public_key`   | Independently pinned `ssh-ed25519` host key, without a comment           |
+| `denied_probe_ipv4` | Separately verified reachable Tailscale endpoint that CI must not access |
+
+These are private operational bindings even where individual identifiers are nonsecret. The second
+secret contains the dedicated restricted OpenSSH private key. Install both through secure stdin,
+never command arguments, source, public artifacts or chat.
+
+`scripts/game_network.py` rechecks GitHub context, fresh CI, environment/review and runner metadata
+before staging credentials. It runs a checksum-pinned native Tailscale client in userspace mode with
+memory-only ephemeral state, automatic GitHub OIDC discovery, one exact CI tag, incoming connections
+blocked, and DNS/routes unchanged. SSH uses a private socket proxy, a pinned host key, the dedicated
+key only, no agent and no forwarding. The server must return the exact fresh challenge.
+
+After the positive SSH check, three negative connection checks must not connect: the target's
+ordinary SSH and HTTPS ports and the independent denied endpoint's SSH port. A timeout alone does
+not identify the cause of denial; pair runtime observations with independently validated policy and
+endpoint reachability. Source tests use external tool doubles and do not establish live isolation.
+
+Only bounded non-sensitive receipts are uploaded. Private daemon diagnostics are not public
+artifacts. Normal completion logs out and stops only the owned daemon, then removes staged keys. The
+workflow's `always()` cleanup also validates run ownership, process start identity and socket
+arguments and uses a pidfd before terminating an interrupted run's daemon. It refuses foreign state
+rather than deleting or killing by a broad name match. Failed or ambiguous attempts are inspected,
+not blindly rerun. Hosted workflow acceptance remains separate from local tests and installed
+listener acceptance; none of these preflight operations starts the game.
