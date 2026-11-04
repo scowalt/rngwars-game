@@ -38,7 +38,7 @@ def context(env):
 def resolve(env):
     revision, run_id, ci_run = context(env)
     if env.get("GAME_PUBLICATION_OPERATION") == "publish":
-        publication_configuration()
+        publication_configuration(env)
     identity = metadata.resolve_ci(ci_run, revision)
     source_run = metadata.github(f"/actions/runs/{ci_run}")
     created = datetime.datetime.fromisoformat(source_run["created_at"])
@@ -98,9 +98,8 @@ def prepare(identity, artifact_id, destination):
     return {**identity, **info, "status": "native_candidate_verified_no_publication", "artifact_id": artifact_id, "native_job_id": native[0]["id"]}
 
 
-def publication_configuration():
-    flag = metadata.github("/actions/variables/GAME_PUBLICATION_ENABLED")
-    require(flag["name"] == "GAME_PUBLICATION_ENABLED" and flag["value"] == "true", "game_publication_disabled")
+def publication_configuration(env):
+    require(env.get("GAME_PUBLICATION_ENABLED") == "true", "game_publication_disabled")
     environment = metadata.github("/environments/game-publication")
     require(environment["name"] == "game-publication" and environment["can_admins_bypass"] is False and environment["deployment_branch_policy"] == {"protected_branches": False, "custom_branch_policies": True}, "game_publication_environment")
     reviewers = [rule for rule in environment["protection_rules"] if rule["type"] == "required_reviewers"]
@@ -112,7 +111,7 @@ def publication_configuration():
 
 def publication_authority(info, env):
     require(env.get("GAME_PUBLICATION_OPERATION") == "publish" and env.get("EXPECTED_IMAGE_DIGEST") == info["image_digest"] and env.get("EXPECTED_ARCHIVE_SHA256") == info["archive_sha256"], "game_publication_not_approved")
-    environment = publication_configuration()
+    environment = publication_configuration(env)
     reviews = metadata.github(f"/actions/runs/{info['publication_run_id']}/approvals")
     selected = [review for review in reviews if any(item["id"] == environment["id"] and item["name"] == "game-publication" for item in review["environments"])]
     require(len(selected) == 1 and selected[0]["state"] == "approved" and selected[0]["user"]["id"] == 1100550, "game_publication_review_missing")

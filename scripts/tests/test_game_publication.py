@@ -25,7 +25,7 @@ class PublicationCLITests(unittest.TestCase):
         self.addCleanup(self.area.cleanup)
         self.root = Path(self.area.name)
         gh = self.root / "gh"
-        gh.write_text("#!" + sys.executable + "\nimport json,os,sys\nfrom pathlib import Path\nargs=sys.argv[1:]\nif args[0]=='attestation':\n expected={'--cert-identity':'https://github.com/scowalt/rngwars-game/.github/workflows/game-publication.yml@refs/heads/main','--signer-digest':'" + REVISION + "','--source-digest':'" + REVISION + "','--source-ref':'refs/heads/main','--cert-oidc-issuer':'https://token.actions.githubusercontent.com','--predicate-type':'https://slsa.dev/provenance/v1'}\n assert args[1]=='verify' and '--deny-self-hosted-runners' in args and '--bundle-from-oci' in args\n assert all(args[args.index(k)+1]==v for k,v in expected.items())\n print(Path(os.environ['HOME'],'attestations.json').read_text()); raise SystemExit(0)\nassert args[0]=='api'\nmethod=args[args.index('--method')+1]\nroute=args[-1].removeprefix('repos/scowalt/rngwars-game')\nif method=='POST':\n body=json.load(sys.stdin)\n with Path(os.environ['HOME'],'writes.jsonl').open('a') as f: f.write(json.dumps({'route':route,'body':body})+'\\n')\nelse: assert method=='GET'\nif route=='/actions/artifacts/99/zip':\n sys.stdout.buffer.write(Path(os.environ['HOME'],'artifact.zip').read_bytes()); raise SystemExit(0)\nresponses=json.loads(Path(os.environ['HOME'],'responses.json').read_text())\nif route not in responses: raise SystemExit(1)\nprint(json.dumps(responses[route]))\n")
+        gh.write_text("#!" + sys.executable + "\nimport json,os,sys\nfrom pathlib import Path\nargs=sys.argv[1:]\nif args[0]=='attestation':\n expected={'--cert-identity':'https://github.com/scowalt/rngwars-game/.github/workflows/game-publication.yml@refs/heads/main','--signer-digest':'" + REVISION + "','--source-digest':'" + REVISION + "','--source-ref':'refs/heads/main','--cert-oidc-issuer':'https://token.actions.githubusercontent.com','--predicate-type':'https://slsa.dev/provenance/v1'}\n assert args[1]=='verify' and '--deny-self-hosted-runners' in args and '--bundle-from-oci' in args\n assert all(args[args.index(k)+1]==v for k,v in expected.items())\n print(Path(os.environ['HOME'],'attestations.json').read_text()); raise SystemExit(0)\nassert args[0]=='api'\nmethod=args[args.index('--method')+1]\nroute=args[-1].removeprefix('repos/scowalt/rngwars-game')\nif method=='POST':\n body=json.load(sys.stdin)\n with Path(os.environ['HOME'],'writes.jsonl').open('a') as f: f.write(json.dumps({'route':route,'body':body})+'\\n')\nelse: assert method=='GET'\nif route=='/actions/artifacts/99/zip':\n sys.stdout.buffer.write(Path(os.environ['HOME'],'artifact.zip').read_bytes()); raise SystemExit(0)\nresponses=json.loads(Path(os.environ['HOME'],'responses.json').read_text())\nif route not in responses: raise SystemExit(1)\nif '__http_error' in responses[route]:\n sys.stderr.write('gh: unexpected-sensitive-provider-message (HTTP '+str(responses[route]['__http_error'])+')'); raise SystemExit(1)\nprint(json.dumps(responses[route]))\n")
         gh.chmod(0o700)
         self.env = {"PATH": str(self.root) + os.pathsep + os.environ["PATH"], "HOME": str(self.root), "GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": REPOSITORY, "GITHUB_REPOSITORY_ID": "1442331254", "GITHUB_REPOSITORY_OWNER_ID": "1100550", "GITHUB_REF": "refs/heads/main", "GITHUB_SHA": REVISION, "GITHUB_WORKFLOW_SHA": REVISION, "GITHUB_WORKFLOW_REF": WORKFLOW, "GITHUB_RUN_ID": "77", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_ACTOR": "scowalt", "GITHUB_ACTOR_ID": "1100550", "GITHUB_TRIGGERING_ACTOR": "scowalt", "SOURCE_CI_RUN_ID": "42", "APPROVED_REVISION": REVISION}
         identity = {"id": 1442331254}
@@ -80,8 +80,9 @@ class PublicationCLITests(unittest.TestCase):
         skopeo.chmod(0o700)
         self.env.update(GH_TOKEN="synthetic-github-package-token", DOCKER_CONFIG=str(self.root / "registry-auth"), GAME_PUBLICATION_OPERATION="publish", EXPECTED_IMAGE_DIGEST="sha256:802be08bda929fdfd2e631512683bdec849c61f39fb7cfd47297554e11bb28b8")
         self.env["EXPECTED_ARCHIVE_SHA256"] = hashlib.sha256(archive(files)).hexdigest()
+        self.env["GAME_PUBLICATION_ENABLED"] = "true"
         attempt = "release-attempt/game-publication/" + REVISION
-        self.responses.update({"/actions/variables/GAME_PUBLICATION_ENABLED": {"name": "GAME_PUBLICATION_ENABLED", "value": "true"}, "/environments/game-publication": {"id": 400, "name": "game-publication", "can_admins_bypass": False, "deployment_branch_policy": {"protected_branches": False, "custom_branch_policies": True}, "protection_rules": [{"type": "required_reviewers", "prevent_self_review": False, "reviewers": [{"type": "User", "reviewer": {"id": 1100550}}]}]}, "/environments/game-publication/deployment-branch-policies": {"total_count": 1, "branch_policies": [{"name": "main", "type": "branch"}]}, "/actions/runs/77/approvals": [{"state": "approved", "user": {"id": 1100550}, "environments": [{"id": 400, "name": "game-publication"}]}], "/rulesets?per_page=100": [{"id": 50, "name": "Immutable release attempts", "target": "tag", "enforcement": "active"}], "/rulesets/50": {"conditions": {"ref_name": {"include": ["refs/tags/release-attempt/**"], "exclude": []}}, "rules": [{"type": "update"}, {"type": "deletion"}], "bypass_actors": []}, "/git/matching-refs/tags/" + attempt: [], "/git/tags": {"sha": "c" * 40}, "/git/refs": {"ref": "refs/tags/" + attempt, "object": {"sha": "c" * 40}}})
+        self.responses.update({"/environments/game-publication": {"id": 400, "name": "game-publication", "can_admins_bypass": False, "deployment_branch_policy": {"protected_branches": False, "custom_branch_policies": True}, "protection_rules": [{"type": "required_reviewers", "prevent_self_review": False, "reviewers": [{"type": "User", "reviewer": {"id": 1100550}}]}]}, "/environments/game-publication/deployment-branch-policies": {"total_count": 1, "branch_policies": [{"name": "main", "type": "branch"}]}, "/actions/runs/77/approvals": [{"state": "approved", "user": {"id": 1100550}, "environments": [{"id": 400, "name": "game-publication"}]}], "/rulesets?per_page=100": [{"id": 50, "name": "Immutable release attempts", "target": "tag", "enforcement": "active"}], "/rulesets/50": {"conditions": {"ref_name": {"include": ["refs/tags/release-attempt/**"], "exclude": []}}, "rules": [{"type": "update"}, {"type": "deletion"}], "bypass_actors": []}, "/git/matching-refs/tags/" + attempt: [], "/git/tags": {"sha": "c" * 40}, "/git/refs": {"ref": "refs/tags/" + attempt, "object": {"sha": "c" * 40}}})
         return attempt
 
     def test_publishes_only_after_actual_environment_review_and_immutable_reservation(self):
@@ -112,6 +113,23 @@ class PublicationCLITests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("game_attestation_invocation", result.stderr)
 
+    def test_uses_GitHub_injected_enablement_without_variable_management_access(self):
+        self.publication_capability()
+        self.env["GAME_PUBLICATION_ENABLED"] = "true"
+        self.assertNotIn("/actions/variables/GAME_PUBLICATION_ENABLED", self.responses)
+        result = self.invoke("resolve")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "game_source_resolved_no_publication")
+        self.assertFalse((self.root / "writes.jsonl").exists())
+
+    def test_metadata_denial_reports_only_safe_endpoint_class_and_status(self):
+        self.publication_capability()
+        self.responses["/environments/game-publication"] = {"__http_error": 403}
+        result = self.invoke("resolve")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("github_game_environment_http_403", result.stderr)
+        self.assertNotIn("unexpected-sensitive-provider-message", result.stdout + result.stderr)
+
     def test_publication_resolution_requires_preexisting_protected_environment(self):
         self.publication_capability()
         self.responses["/environments/game-publication"]["can_admins_bypass"] = True
@@ -126,7 +144,7 @@ class PublicationCLITests(unittest.TestCase):
                 attempt = self.publication_capability()
                 self.env["DOCKER_CONFIG"] = str(self.root / ("auth-" + case))
                 if case == "disabled":
-                    self.responses["/actions/variables/GAME_PUBLICATION_ENABLED"]["value"] = "false"
+                    self.env["GAME_PUBLICATION_ENABLED"] = "false"
                 elif case == "bypass":
                     self.responses["/environments/game-publication"]["can_admins_bypass"] = True
                 elif case == "wildcard":

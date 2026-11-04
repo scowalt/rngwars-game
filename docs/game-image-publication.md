@@ -22,13 +22,16 @@ publication, the owner must configure that environment with:
 - The existing immutable release-attempt ruleset, with no update/deletion bypass.
 
 For a publication request, `resolve` checks the enablement and preexisting protected environment
-before the privileged job can be scheduled. The publisher rechecks the variable, environment/branch
-policies and this run's actual review history after the gate. A missing, rejected, wrong-user or
-ambiguous review blocks registry writes. Source and controller revision must still be current.
-Review the source, manifest digest and archive digest shown by `prepare`; the publisher rechecks
-both digests after downloading the artifact again. Private target ownership, controller fencing and
-real recovery evidence remain owner acceptance gates outside the public workflow. The workflow does
-not turn a caller-supplied recovery boolean into operational evidence.
+before the privileged job can be scheduled. Enablement is supplied by GitHub's repository `vars`
+context, not a dispatch input or a Variables-management API token. The publisher checks that
+injected value and rereads environment/branch policies and this run's actual review history after
+the gate. Disabling the variable gates later jobs/dispatches; it does not cancel a job already
+executing. A missing, rejected, wrong-user or ambiguous review blocks registry writes. Source and
+controller revision must still be current. Review the source, manifest digest and archive digest
+shown by `prepare`; the publisher rechecks both digests after downloading the artifact again.
+Private target ownership, controller fencing and real recovery evidence remain owner acceptance
+gates outside the public workflow. The workflow does not turn a caller-supplied recovery boolean
+into operational evidence.
 
 ## Build and artifact isolation
 

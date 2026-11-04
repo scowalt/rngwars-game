@@ -29,6 +29,7 @@ env:
   APPROVED_REVISION: ${{ inputs.approved_revision }}
   SOURCE_CI_RUN_ID: ${{ inputs.source_ci_run_id }}
   GAME_PUBLICATION_OPERATION: ${{ inputs.operation }}
+  GAME_PUBLICATION_ENABLED: ${{ vars.GAME_PUBLICATION_ENABLED }}
 
 jobs:
   resolve:

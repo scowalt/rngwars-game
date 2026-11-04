@@ -123,7 +123,13 @@ def github(path):
     require(type(path) is str and (path == "" or path.startswith("/")) and ".." not in path and "\n" not in path, "metadata_route")
     environment = {key: os.environ[key] for key in ["PATH", "HOME", "GH_TOKEN", "GITHUB_TOKEN", "SSL_CERT_FILE", "SSL_CERT_DIR"] if key in os.environ}
     result = subprocess.run(["gh", "api", "--hostname", "github.com", "--method", "GET", "repos/scowalt/rngwars-game" + path], env=environment, capture_output=True, timeout=45)
-    require(result.returncode == 0 and len(result.stdout) <= 8 * 1024 * 1024, "github_metadata_unavailable")
+    if result.returncode != 0:
+        kind = {"/environments/game-publication": "game_environment", "/environments/game-publication/deployment-branch-policies": "game_branches", "/actions/variables/GAME_PUBLICATION_ENABLED": "game_variable"}.get(path, "metadata")
+        if re.fullmatch(r"/actions/runs/[1-9][0-9]*/approvals", path):
+            kind = "run_reviews"
+        status = re.search(rb"\(HTTP ([1-5][0-9]{2})\)", result.stderr)
+        raise Blocked("github_" + kind + ("_http_" + status.group(1).decode() if status else "_unavailable"))
+    require(len(result.stdout) <= 8 * 1024 * 1024, "github_metadata_size")
     try:
         return json.loads(result.stdout, object_pairs_hook=unique_object)
     except (ValueError, UnicodeError) as error:
