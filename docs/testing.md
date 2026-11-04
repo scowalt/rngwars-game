@@ -98,11 +98,15 @@ python3 -W default::ResourceWarning -m unittest discover -s scripts/tests -v
 uv run --no-project --python 3.14 --with-requirements ops/tests/requirements.txt python -W default::ResourceWarning -m unittest discover -s ops/tests -v
 ```
 
-Operator tests require Restic and OpenTofu; configuration tests also use Docker's CLI as a parser
-and `systemd-analyze verify`, never a running container or installed unit. Public provider-package
-retrieval is not a plan/apply or authenticated cloud operation. Release-guard tests use fake
-evidence and never publish/deploy. Fork approval, artifact retention and branch protection remain
-explicit repository-owner settings, not assertions made by a workflow file.
+Operator tests require Restic, OpenTofu and the OpenSSH server/client CLIs. Configuration tests use
+Docker's CLI as a parser, `systemd-analyze verify` and `sshd -T`, never a running container,
+listener or installed unit. Release-verifier tests exercise real files with external CLI/provider
+doubles; restricted SSH probe tests exercise stdin, terminal rejection and timeouts without starting
+SSH. See [private deployment preparation](game-private-preflight.md) for the distinction between
+these interfaces and actual authenticated deployment. Public provider-package retrieval is not a
+plan/apply or authenticated cloud operation. Release-guard tests use fake evidence and never
+publish/deploy. Fork approval, artifact retention and branch protection remain explicit
+repository-owner settings, not assertions made by a workflow file.
 
 A successful local check does not establish a hosted Actions pass or satisfy all branch-protection
 requirements. Check workflow runs for the exact candidate SHA, and assess non-Actions protection
