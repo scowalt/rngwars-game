@@ -4,6 +4,10 @@ This repository is intended to own maintained application, operational and CI/CD
 Deployment-specific values and historical operating evidence are not part of the public source. The
 code here does not authorize provisioning, data access, installation, activation or recovery.
 
+[Private deployment preparation](game-private-preflight.md) provides credential-free release
+verification and a restricted read-only SSH transport probe. Neither is a mutating deployment
+controller or permission to start the game.
+
 ## Fresh database initialization
 
 An independently approved clean start uses the explicit offline
