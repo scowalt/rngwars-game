@@ -19,7 +19,8 @@ publication, the owner must configure that environment with:
 - A main-only custom branch policy, exactly the owner reviewer, self-review permitted for the single
   maintainer, and no admin bypass.
 - Repository variable `GAME_PUBLICATION_ENABLED=true`. Absence or any other value blocks publishing.
-- The existing immutable release-attempt ruleset, with no update/deletion bypass.
+- The existing immutable release-attempt ruleset, with no update/deletion bypass. The owner checks
+  the complete management view immediately before approving each candidate.
 
 For a publication request, `resolve` checks the enablement and preexisting protected environment
 before the privileged job can be scheduled. Enablement is supplied by GitHub's repository `vars`
@@ -65,6 +66,14 @@ Only the reviewed publication job receives the successor's `GITHUB_TOKEN` with p
 attestation-write, contents-write and OIDC permissions. Contents-write reserves an immutable
 `release-attempt/game-publication/<full-source-SHA>` tag before image upload. No historical package
 access or owner-wide package credential is granted to this repository.
+
+GitHub hides the ruleset's bypass-actor list from callers without ruleset-write access. The workflow
+never interprets an omitted list as empty: when it is hidden, the effective
+`current_user_can_bypass` value must explicitly be `never`. Visible exceptions, any effective
+bypass, or absence of both forms of evidence block reservation. The owner-side full-policy check
+remains separate; this avoids granting policy administration to the publishing token. Attempt and
+receipt metadata state which visibility path was checked. Unexpected local/provider failures report
+only a bounded stage and exception class, never exception values or raw diagnostics.
 
 The sole destination is `ghcr.io/scowalt/rngwars-game-releases:<full-source-SHA>`. Existing registry
 tags or attempt reservations block publication. A failed/ambiguous operation is not retried or
