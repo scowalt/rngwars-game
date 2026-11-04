@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -40,7 +41,14 @@ class PrivateSSHConfigurationTests(unittest.TestCase):
             text = template.read_text().format(configuration_file=area / "sshd.conf")
             unit = area / "rngwars-game-ssh.service"
             unit.write_text(text)
-            result = subprocess.run(["systemd-analyze", "verify", str(unit)], capture_output=True, text=True, timeout=15)
+            for name in ["sysinit.target", "basic.target", "network-online.target"]:
+                (area / name).write_text("[Unit]\nDefaultDependencies=no\n")
+            environment = {"PATH": os.environ["PATH"], "SYSTEMD_UNIT_PATH": str(area)}
+            blocked = subprocess.run(["systemd-analyze", "verify", str(unit)], env=environment, capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertIn("Unit tailscaled.service not found", blocked.stderr)
+            (area / "tailscaled.service").write_text("[Service]\nType=oneshot\nExecStart=/usr/bin/true\n")
+            result = subprocess.run(["systemd-analyze", "verify", str(unit)], env=environment, capture_output=True, text=True, timeout=15)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("RuntimeDirectory=rngwars-game-ssh sshd", text)
             self.assertIn("RuntimeDirectoryPreserve=yes", text)
