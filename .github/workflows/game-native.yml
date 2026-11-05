@@ -35,6 +35,7 @@ on:
       - scripts/tests/test_game_release.py
       - scripts/tests/test_game_artifact.py
       - scripts/tests/fixtures/**
+      - ops/production/game-deployment/**
   pull_request:
     branches: [main]
     paths:
@@ -68,6 +69,7 @@ on:
       - scripts/tests/test_game_release.py
       - scripts/tests/test_game_artifact.py
       - scripts/tests/fixtures/**
+      - ops/production/game-deployment/**
 
 permissions:
   contents: read
