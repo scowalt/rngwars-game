@@ -20,6 +20,9 @@ class PreparationTests(unittest.TestCase):
             shutil.copytree(ROOT / "infra/game-backups", target)
             environment = {
                 "PATH": os.environ["PATH"], "HOME": directory,
+                "TF_REGISTRY_DISCOVERY_RETRY": "3",
+                "TF_REGISTRY_CLIENT_TIMEOUT": "30",
+                "TF_PROVIDER_DOWNLOAD_RETRY": "3",
                 "TF_VAR_account_id": "a" * 32,
                 "TF_VAR_bucket_item_write_permission_group_id": "b" * 32,
                 "TF_VAR_bucket_name": "fixture-backup-bucket",
@@ -42,7 +45,7 @@ class PreparationTests(unittest.TestCase):
     def test_synthetic_provider_failure_reports_bounded_diagnostics(self):
         with tempfile.TemporaryDirectory() as directory:
             tool = Path(directory) / "tofu"
-            tool.write_text("#!" + sys.executable + "\nimport sys\nprint('x'*16000)\nprint('fixture-provider-unavailable https://provider.invalid/archive?token=synthetic-provider-query-value',file=sys.stderr)\nraise SystemExit(17)\n")
+            tool.write_text("#!" + sys.executable + "\nimport os,sys\nassert os.environ['TF_REGISTRY_DISCOVERY_RETRY']=='3'\nassert os.environ['TF_REGISTRY_CLIENT_TIMEOUT']=='30'\nassert os.environ['TF_PROVIDER_DOWNLOAD_RETRY']=='3'\nprint('x'*16000)\nprint('fixture-provider-unavailable https://provider.invalid/archive?token=synthetic-provider-query-value',file=sys.stderr)\nraise SystemExit(17)\n")
             tool.chmod(0o700)
             result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "PreparationTests.test_backup_module_uses_explicit_identity_and_keeps_bucket_scope"], env={**os.environ, "PATH": directory + os.pathsep + os.environ["PATH"]}, capture_output=True, text=True, timeout=15)
             self.assertNotEqual(result.returncode, 0)
