@@ -21,6 +21,7 @@ on:
       - ops/production/docker-compose.yml
       - package.json
       - apps/marketing_site/package.json
+      - scripts/native_multiplayer_smoke.js
   pull_request:
     branches: [main]
     paths:
@@ -40,6 +41,7 @@ on:
       - ops/production/docker-compose.yml
       - package.json
       - apps/marketing_site/package.json
+      - scripts/native_multiplayer_smoke.js
 
 permissions:
   contents: read

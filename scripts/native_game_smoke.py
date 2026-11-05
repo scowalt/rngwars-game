@@ -168,6 +168,15 @@ def main():
         require(status == 200 and isinstance(page, str) and "<html" in page.lower(), "bundled_frontend_unavailable")
         command(["docker", "exec", production, "/bin/sh", "-c", "test -s /usr/share/doc/rngwars/LICENSE && test -s /usr/share/doc/rngwars/THIRD_PARTY_LICENSES.txt"])
         checks.extend(["production_restart_with_same_DB_and_token", "bundled_frontend", "distributed_legal_notices"])
+        client_image = "oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f"
+        command(["docker", "pull", "--platform", "linux/arm64", client_image], timeout=180)
+        client_name = prefix + "-multiplayer-client"
+        containers.append(client_name)
+        fixture = Path(__file__).with_name("native_multiplayer_smoke.js").resolve()
+        result = command(["docker", "run", "--name", client_name, "--network", "container:" + production, "--read-only", "--user", "10001:10001", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--mount", f"type=bind,src={fixture},dst=/test.js,readonly", client_image, "bun", "/test.js"], timeout=45, required=False)
+        require(result.returncode == 0, "native_multiplayer_completion_failed")
+        require(json.loads(result.stdout) == {"multiplayer_sequential_join_completion": True, "both_clients_observed_all_phases": True, "ratings_and_history_persisted": True}, "native_multiplayer_receipt")
+        checks.append("multiplayer_sequential_join_completion")
         command(["docker", "stop", "--time", "10", production])
         missing = start("refuse-missing", "Production", "/data/missing.db")
         result = command(["docker", "wait", missing], timeout=40)
