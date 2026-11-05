@@ -82,21 +82,25 @@ runs no subprocesses and accesses no database, backup credentials or Docker sock
 account must not receive those privileges merely to test transport.
 
 An echo from this probe is not application health, a release approval or a completed deployment. The
-privileged fixed host controller, recovery checks and safe rollback still need separate
-implementation and operational acceptance.
+[guarded updater](game-deployment-controller.md), recovery checks and safe rollback require separate
+installation, activation and operational acceptance.
 
-The companion `rngwars-game-ssh.service` is a template for the unprivileged probe, not the later
-privileged deployment command. Render `configuration_file` privately. It provides OpenSSH's required
-runtime directory as well as its project PID directory and preserves them on stop; no existing SSH
-configuration or keys are replaced. `NoNewPrivileges=yes` intentionally prevents privilege
-escalation from the probe. Validate the unit/configuration before installation, then verify actual
-key, forced-command, forwarding, PTY and subsystem behavior without modifying production data.
+The companion `rngwars-game-ssh.service` remains the unprivileged SSH entry point. A reviewed
+installation can use `game_ssh_dispatch.py` to retain this probe and relay only the fixed deployment
+verb to the separately isolated root worker; the SSH account itself never becomes privileged. Render
+`configuration_file` privately. It provides OpenSSH's required runtime directory as well as its
+project PID directory and preserves them on stop; no existing SSH configuration or keys are
+replaced. `NoNewPrivileges=yes` intentionally prevents privilege escalation from the probe. Validate
+the unit/configuration before installation, then verify actual key, forced-command, forwarding, PTY
+and subsystem behavior without modifying production data.
 
 ## Protected read-only workflow
 
-`.github/workflows/game-deployment.yml` currently implements **preflight only**, despite its
-reserved deployment-controller filename. Manual dispatch defaults to `verify-release`; it validates
-exact current main CI and fetches/verifies the selected published image without private capability.
+`.github/workflows/game-deployment.yml` keeps read-only verification separate from the explicitly
+enabled, owner-reviewed `deploy` operation described in
+[the updater guide](game-deployment-controller.md). Manual dispatch still defaults to
+`verify-release`; it validates exact current main CI and fetches/verifies the selected published
+image without private capability. `private-preflight` never invokes the mutating host command.
 
 The optional `private-preflight` job additionally requires:
 

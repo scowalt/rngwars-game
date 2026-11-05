@@ -32,6 +32,10 @@ class NativeWorkflowTests(unittest.TestCase):
         upload = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/upload-artifact@"))
         self.assertEqual(upload["with"]["path"], "${{ runner.temp }}/native-game-result.json")
         self.assertFalse(upload["with"]["overwrite"])
+        updater = next(s for s in job["steps"] if "native_updater_smoke.py" in s.get("run", ""))
+        self.assertIn("RUNNER_ENVIRONMENT", updater["run"])
+        self.assertIn("GITHUB_REPOSITORY_ID", updater["run"])
+        self.assertTrue(any(s.get("with", {}).get("path") == "${{ runner.temp }}/native-updater-result.json" for s in job["steps"]))
         for step in job["steps"]:
             if "uses" in step:
                 self.assertRegex(step["uses"], r"@[a-f0-9]{40}$")

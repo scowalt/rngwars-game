@@ -1,4 +1,4 @@
-name: Game private preflight
+name: Game deployment
 
 on:
   workflow_dispatch:
@@ -24,12 +24,13 @@ on:
         required: true
         type: string
       operation:
-        description: Release verification or separately reviewed private transport only
+        description: Release verification, private preflight, or reviewed game update
         type: choice
         default: verify-release
         options:
           - verify-release
           - private-preflight
+          - deploy
 
 permissions:
   contents: read
@@ -43,6 +44,7 @@ env:
   SOURCE_CI_RUN_ID: ${{ inputs.ci_run_id }}
   GAME_PREFLIGHT_OPERATION: ${{ inputs.operation }}
   GAME_PRIVATE_PREFLIGHT_ENABLED: ${{ vars.GAME_PRIVATE_PREFLIGHT_ENABLED }}
+  GAME_DEPLOYMENT_ENABLED: ${{ vars.GAME_DEPLOYMENT_ENABLED }}
   IMAGE_SOURCE_REVISION: ${{ inputs.image_source_revision }}
   EXPECTED_IMAGE_DIGEST: ${{ inputs.image_digest }}
   PUBLICATION_RUN_ID: ${{ inputs.publication_run_id }}
@@ -80,12 +82,28 @@ jobs:
               stream.write("Image: `" + receipt["image"] + "`\n\n")
               stream.write("Source: `" + receipt["source_revision"] + "`\n\n")
               stream.write("Publication run: " + str(receipt["publication_run_id"]) + "\n\n")
-              stream.write("Private preflight tests transport only. No game deployment or data mutation is authorized.\n")
+              if os.environ["GAME_PREFLIGHT_OPERATION"] == "deploy":
+                  stream.write("Requested: update the game to this exact release. Review also accepts a brief single-instance interruption and compatible captured-image rollback; the database is never restored automatically.\n")
+              else:
+                  stream.write("Private preflight tests transport only. No game deployment or data mutation is authorized.\n")
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: game-release-verification-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/game-private-release.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 14
+      - name: Create the exact public deployment request before environment review
+        if: inputs.operation == 'deploy'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/game_network.py request > "$RUNNER_TEMP/request.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: inputs.operation == 'deploy'
+        with:
+          name: game-deployment-request-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/request.json
           if-no-files-found: error
           overwrite: false
           retention-days: 14
@@ -138,5 +156,57 @@ jobs:
           name: game-private-preflight-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/game-private-network-result.json
           if-no-files-found: error
+          overwrite: false
+          retention-days: 14
+
+  deploy:
+    name: Deploy verified game release
+    if: inputs.operation == 'deploy'
+    needs: resolve
+    environment: game-production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Recheck source and enabled deployment before private access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/game_network.py resolve
+      - name: Install pinned native Tailscale client without changing system services
+        run: |
+          set -eu
+          umask 077
+          version=1.104.1
+          tools="$RUNNER_TEMP/rngwars-tailscale-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -m 0700 "$tools"
+          archive="$tools/tailscale.tgz"
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            --retry 3 --retry-max-time 120 --connect-timeout 10 --max-time 120 --max-filesize 104857600 \
+            "https://pkgs.tailscale.com/stable/tailscale_${version}_amd64.tgz" -o "$archive"
+          printf '%s  %s\n' '108d1d96ecf410d305571e173516f27038f870919a9b89c914a167c6d33a4528' "$archive" | sha256sum --check --strict
+          tar --extract --gzip --file "$archive" --directory "$tools" --no-same-owner --no-same-permissions
+          printf '%s\n' "$tools/tailscale_${version}_amd64" >> "$GITHUB_PATH"
+      - name: Execute only the independently authorized fixed game update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GAME_NETWORK_BINDING: ${{ secrets.GAME_NETWORK_BINDING }}
+          GAME_SSH_PRIVATE_KEY: ${{ secrets.GAME_SSH_PRIVATE_KEY }}
+        run: python3 scripts/game_network.py deploy > "$RUNNER_TEMP/game-deployment-result.json"
+      - name: Remove only this run's private daemon and credentials
+        if: always()
+        run: python3 scripts/game_network.py cleanup
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: game-deployment-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/game-deployment-result.json
+          if-no-files-found: ignore
           overwrite: false
           retention-days: 14

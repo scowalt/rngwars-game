@@ -42,9 +42,10 @@ def resolve(env):
     revision = env.get("GITHUB_SHA", "")
     require(re.fullmatch(r"[a-f0-9]{40}", revision) and env.get("GITHUB_WORKFLOW_SHA") == env.get("APPROVED_REVISION") == revision, "private_controller_revision")
     operation = env.get("GAME_PREFLIGHT_OPERATION")
-    require(operation in {"verify-release", "private-preflight"}, "private_operation")
-    if operation == "private-preflight":
-        require(env.get("GAME_PRIVATE_PREFLIGHT_ENABLED") == "true", "private_preflight_disabled")
+    require(operation in {"verify-release", "private-preflight", "deploy"}, "private_operation")
+    if operation in {"private-preflight", "deploy"}:
+        flag = "GAME_DEPLOYMENT_ENABLED" if operation == "deploy" else "GAME_PRIVATE_PREFLIGHT_ENABLED"
+        require(env.get(flag) == "true", "private_operation_disabled")
         configuration()
     run_id = identifier(env.get("GITHUB_RUN_ID", ""))
     ci_run = identifier(env.get("SOURCE_CI_RUN_ID", ""))
@@ -61,17 +62,28 @@ def resolve(env):
 
 
 def private_authority(env):
-    require(env.get("GAME_PREFLIGHT_OPERATION") == "private-preflight" and env.get("GITHUB_JOB") == "preflight", "private_probe_not_selected")
+    operation = env.get("GAME_PREFLIGHT_OPERATION")
+    require(operation in {"private-preflight", "deploy"} and env.get("GITHUB_JOB") == ("deploy" if operation == "deploy" else "preflight"), "private_probe_not_selected")
     identity = resolve(env)
     environment = configuration()
     reviews = metadata.github(f"/actions/runs/{identity['run_id']}/approvals")
     selected = [review for review in reviews if any(item["id"] == environment["id"] and item["name"] == "game-production" for item in review["environments"])]
     require(len(selected) == 1 and selected[0]["state"] == "approved" and selected[0]["user"]["id"] == 1100550, "private_review_missing")
     inventory = metadata.github(f"/actions/runs/{identity['run_id']}/attempts/1/jobs?per_page=100")
-    require(inventory["total_count"] == len(inventory["jobs"]) == 2, "private_job_inventory")
-    jobs = [job for job in inventory["jobs"] if job["name"] == "Private transport preflight"]
+    require(inventory["total_count"] == len(inventory["jobs"]) == 3 and {job["name"] for job in inventory["jobs"]} == {"resolve", "Private transport preflight", "Deploy verified game release"}, "private_job_inventory")
+    selected_name = "Deploy verified game release" if operation == "deploy" else "Private transport preflight"
+    jobs = [job for job in inventory["jobs"] if job["name"] == selected_name]
     require(len(jobs) == 1 and jobs[0]["run_id"] == identity["run_id"] and jobs[0]["status"] == "in_progress" and jobs[0]["labels"] == ["ubuntu-24.04"], "private_job_runner")
     return identity
+
+
+def deployment_request(env):
+    require(env.get("GITHUB_JOB") == "resolve" and env.get("GAME_PREFLIGHT_OPERATION") == "deploy", "private_request_not_selected")
+    context = resolve(env)
+    source = env.get("IMAGE_SOURCE_REVISION", "")
+    digest = env.get("EXPECTED_IMAGE_DIGEST", "")
+    require(re.fullmatch(r"[a-f0-9]{40}", source) and re.fullmatch(r"sha256:[a-f0-9]{64}", digest), "private_request_image")
+    return {"version": 1, "operation": "deploy", "run_id": context["run_id"], "controller_revision": context["controller_revision"], "ci_run_id": context["ci_run_id"], "image_source_revision": source, "image_digest": digest, "publication_run_id": identifier(env.get("PUBLICATION_RUN_ID", ""))}
 
 
 def binding(env):
@@ -155,6 +167,16 @@ def probe(env):
                 require(denied.returncode != 0 and not denied.stdout, "private_negative_route_connected")
             except subprocess.TimeoutExpired:
                 pass
+        if env.get("GAME_PREFLIGHT_OPERATION") == "deploy":
+            private_authority(env)
+            require(env.get("GH_TOKEN"), "private_job_token_missing")
+            envelope = json.dumps({"version": 1, "run_id": identity["run_id"], "github_token": env["GH_TOKEN"]}).encode()
+            deployed = subprocess.run([*command[:-1], "rngwars-game-deploy-v1"], env=environment, input=envelope, capture_output=True, timeout=920)
+            require(deployed.returncode in {0, 1} and 0 < len(deployed.stdout) <= 4096, "private_deployment_outcome_unconfirmed")
+            reply = json.loads(deployed.stdout, object_pairs_hook=unique_object)
+            require(type(reply) is dict and set(reply) == {"status", "run_id", "controller_revision", "image_digest", "source_revision", "publication_run_id"} and reply["run_id"] == identity["run_id"] and reply["controller_revision"] == identity["controller_revision"] and reply["image_digest"] == env["EXPECTED_IMAGE_DIGEST"] and reply["source_revision"] == env["IMAGE_SOURCE_REVISION"] and reply["publication_run_id"] == identifier(env["PUBLICATION_RUN_ID"]), "private_deployment_reply")
+            require((deployed.returncode == 0 and reply["status"] == "game_deployed") or (deployed.returncode == 1 and reply["status"] in {"game_rolled_back", "deployment_blocked_before_live_change", "operator_recovery_required"}), "private_deployment_reply")
+            return reply
         return {**identity, "status": "private_transport_verified_no_deployment", "negative_connection_checks": 3, "probe_protocol": 1}
     finally:
         if process is not None:
@@ -232,12 +254,15 @@ def main():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     os.umask(0o077)
     parser = argparse.ArgumentParser()
-    parser.add_argument("operation", choices=["resolve", "probe", "cleanup"])
+    parser.add_argument("operation", choices=["resolve", "probe", "deploy", "request", "cleanup"])
     args = parser.parse_args()
     try:
-        action = {"resolve": resolve, "probe": probe, "cleanup": cleanup}[args.operation]
-        print(json.dumps(action(os.environ), sort_keys=True))
-        return 0
+        require(args.operation != "deploy" or os.environ.get("GAME_PREFLIGHT_OPERATION") == "deploy", "private_deploy_not_selected")
+        require(args.operation != "probe" or os.environ.get("GAME_PREFLIGHT_OPERATION") == "private-preflight", "private_probe_not_selected")
+        action = {"resolve": resolve, "probe": probe, "deploy": probe, "request": deployment_request, "cleanup": cleanup}[args.operation]
+        result = action(os.environ)
+        print(json.dumps(result, sort_keys=True))
+        return 1 if args.operation == "deploy" and result["status"] != "game_deployed" else 0
     except Blocked as error:
         print("Game private preflight blocked: " + str(error), file=sys.stderr)
         return 1
