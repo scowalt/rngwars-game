@@ -22,6 +22,19 @@ on:
       - package.json
       - apps/marketing_site/package.json
       - scripts/native_multiplayer_smoke.js
+      - scripts/game_updater.py
+      - scripts/game_recovery.py
+      - scripts/game_ssh_dispatch.py
+      - scripts/game_deploy_authority.py
+      - scripts/game_release.py
+      - scripts/game_network.py
+      - scripts/sqlite-backup-schedule.py
+      - scripts/native_updater_smoke.py
+      - scripts/tests/test_game_updater.py
+      - scripts/tests/test_game_deploy_authority.py
+      - scripts/tests/test_game_release.py
+      - scripts/tests/test_game_artifact.py
+      - scripts/tests/fixtures/**
   pull_request:
     branches: [main]
     paths:
@@ -42,6 +55,19 @@ on:
       - package.json
       - apps/marketing_site/package.json
       - scripts/native_multiplayer_smoke.js
+      - scripts/game_updater.py
+      - scripts/game_recovery.py
+      - scripts/game_ssh_dispatch.py
+      - scripts/game_deploy_authority.py
+      - scripts/game_release.py
+      - scripts/game_network.py
+      - scripts/sqlite-backup-schedule.py
+      - scripts/native_updater_smoke.py
+      - scripts/tests/test_game_updater.py
+      - scripts/tests/test_game_deploy_authority.py
+      - scripts/tests/test_game_release.py
+      - scripts/tests/test_game_artifact.py
+      - scripts/tests/fixtures/**
 
 permissions:
   contents: read
@@ -83,8 +109,8 @@ jobs:
           cd "$RUNNER_TEMP"
           asset="restic_${version}_linux_arm64.bz2"
           base="https://github.com/restic/restic/releases/download/v${version}"
-          curl --fail --silent --show-error --location "$base/$asset" -o "$asset"
-          curl --fail --silent --show-error --location "$base/SHA256SUMS" -o SHA256SUMS
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 3 --retry-max-time 120 --connect-timeout 10 --max-time 60 "$base/$asset" -o "$asset"
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 3 --retry-max-time 120 --connect-timeout 10 --max-time 60 "$base/SHA256SUMS" -o SHA256SUMS
           grep " $asset$" SHA256SUMS | sha256sum --check --strict
           mkdir -p restic-bin
           bzip2 --decompress --stdout "$asset" > restic-bin/restic
@@ -94,11 +120,25 @@ jobs:
         env:
           TEST_IMAGE: rngwars-native:${{ github.sha }}
         run: python3 scripts/native_game_smoke.py "$TEST_IMAGE"
+      - name: Exercise the guarded updater and captured rollback on real native containers
+        env:
+          TEST_IMAGE: rngwars-native:${{ github.sha }}
+        run: |
+          sudo env PATH="$PATH" HOME=/root GITHUB_ACTIONS=true \
+            RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" GITHUB_REPOSITORY_ID="$GITHUB_REPOSITORY_ID" \
+            RUNNER_TEMP="$RUNNER_TEMP" python3 scripts/native_updater_smoke.py "$TEST_IMAGE"
       - name: Retain bounded native evidence, never the fixture database
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: native-game-runtime
           path: ${{ runner.temp }}/native-game-result.json
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: false
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-game-updater
+          path: ${{ runner.temp }}/native-updater-result.json
           if-no-files-found: error
           retention-days: 14
           overwrite: false

@@ -15,13 +15,26 @@ class PrivatePreflightWorkflowTests(unittest.TestCase):
         self.assertEqual(set(triggers), {"workflow_dispatch"})
         inputs = triggers["workflow_dispatch"]["inputs"]
         self.assertEqual(inputs["operation"]["default"], "verify-release")
-        self.assertEqual(inputs["operation"]["options"], ["verify-release", "private-preflight"])
+        self.assertEqual(inputs["operation"]["options"], ["verify-release", "private-preflight", "deploy"])
+        self.assertNotIn("GAME_DEPLOYMENT_ENABLED", inputs)
+        self.assertEqual(workflow["env"]["GAME_DEPLOYMENT_ENABLED"], "${{ vars.GAME_DEPLOYMENT_ENABLED }}")
         self.assertNotIn("GAME_PRIVATE_PREFLIGHT_ENABLED", inputs)
         self.assertEqual(workflow["env"]["GAME_PRIVATE_PREFLIGHT_ENABLED"], "${{ vars.GAME_PRIVATE_PREFLIGHT_ENABLED }}")
         self.assertEqual(workflow["permissions"], {"contents": "read"})
         self.assertFalse(workflow["concurrency"]["cancel-in-progress"])
         jobs = workflow["jobs"]
-        self.assertEqual(set(jobs), {"resolve", "preflight"})
+        self.assertEqual(set(jobs), {"resolve", "preflight", "deploy"})
+        deploy = jobs["deploy"]
+        self.assertEqual(deploy["name"], "Deploy verified game release")
+        self.assertEqual(deploy["if"], "inputs.operation == 'deploy'")
+        self.assertEqual(deploy["environment"], "game-production")
+        self.assertEqual(deploy["needs"], "resolve")
+        self.assertEqual(deploy["permissions"], {"contents": "read", "actions": "read", "id-token": "write"})
+        self.assertTrue(any("game_network.py deploy" in step.get("run", "") for step in deploy["steps"]))
+        self.assertTrue(any(step.get("if") == "always()" and "game_network.py cleanup" in step.get("run", "") for step in deploy["steps"]))
+        self.assertEqual(sum("secrets." in str(step) for step in deploy["steps"]), 1)
+        self.assertIn("game-deployment-request-", str(jobs["resolve"]))
+        self.assertIn("game_network.py request", str(jobs["resolve"]))
         resolve = jobs["resolve"]
         self.assertEqual(resolve["permissions"], {"contents": "read", "actions": "read"})
         self.assertNotIn("environment", resolve)

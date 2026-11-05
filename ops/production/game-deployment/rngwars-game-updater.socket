@@ -1,0 +1,14 @@
+[Unit]
+Description=Restricted local RNGWars updater socket
+
+[Socket]
+ListenStream=/run/rngwars-game-updater.sock
+SocketUser=root
+SocketGroup=rngwars-deploy
+SocketMode=0660
+Accept=yes
+MaxConnections=1
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target

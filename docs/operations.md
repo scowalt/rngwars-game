@@ -6,9 +6,11 @@ code here does not authorize provisioning, data access, installation, activation
 
 [Private deployment preparation](game-private-preflight.md) provides credential-free release
 verification and a restricted read-only SSH transport probe. Neither is a mutating deployment
-controller or permission to start the game. The next
-[controller preparation interface](game-deployment-controller.md) independently verifies reviewed
-request artifacts and immutable controller policy, but likewise performs no deployment.
+controller or permission to start the game. The separate
+[guarded updater](game-deployment-controller.md) adds independently authorized container
+replacement, encrypted recovery, durable attempts and captured rollback. It requires reviewed host
+installation and explicit protected-workflow activation; merging its source does not enable
+deployment.
 
 ## Fresh database initialization
 
