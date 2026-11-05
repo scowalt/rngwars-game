@@ -1,8 +1,10 @@
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -18,6 +20,9 @@ class PreparationTests(unittest.TestCase):
             shutil.copytree(ROOT / "infra/game-backups", target)
             environment = {
                 "PATH": os.environ["PATH"], "HOME": directory,
+                "TF_REGISTRY_DISCOVERY_RETRY": "3",
+                "TF_REGISTRY_CLIENT_TIMEOUT": "30",
+                "TF_PROVIDER_DOWNLOAD_RETRY": "3",
                 "TF_VAR_account_id": "a" * 32,
                 "TF_VAR_bucket_item_write_permission_group_id": "b" * 32,
                 "TF_VAR_bucket_name": "fixture-backup-bucket",
@@ -25,8 +30,10 @@ class PreparationTests(unittest.TestCase):
                 "TF_VAR_bucket_location": "WEUR",
                 "TF_VAR_credential_request_name": "fixture-scope",
             }
-            subprocess.run(["tofu", "init", "-backend=false", "-input=false"], cwd=target, env=environment, check=True, capture_output=True)
-            subprocess.run(["tofu", "validate"], cwd=target, env=environment, check=True, capture_output=True)
+            for arguments in [["init", "-backend=false", "-input=false"], ["validate"]]:
+                result = subprocess.run(["tofu", *arguments], cwd=target, env=environment, capture_output=True, text=True, timeout=180)
+                diagnostic = re.sub(r"(https?://[^\s?#\"']+)[?#][^\s\"']+", r"\1?<redacted>", result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 0, "tofu " + arguments[0] + " failed:\n" + diagnostic[-8192:])
             expression = "jsonencode([local.repository, local.credential_request])"
             result = subprocess.run(["tofu", "console"], cwd=target, env=environment, input=expression, text=True, check=True, capture_output=True)
             repository, request = json.loads(json.loads(result.stdout))
@@ -34,6 +41,31 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(request["policies"][0]["resources"], {"com.cloudflare.edge.r2.bucket." + "a" * 32 + "_default_fixture-backup-bucket": "*"})
             self.assertEqual(request["policies"][0]["permission_groups"], [{"id": "b" * 32, "name": "Workers R2 Storage Bucket Item Write"}])
             self.assertIn("prevent_destroy = true", (target / "main.tf").read_text())
+
+    def test_synthetic_provider_failure_reports_bounded_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tool = Path(directory) / "tofu"
+            tool.write_text("#!" + sys.executable + "\nimport os,sys\nassert os.environ['TF_REGISTRY_DISCOVERY_RETRY']=='3'\nassert os.environ['TF_REGISTRY_CLIENT_TIMEOUT']=='30'\nassert os.environ['TF_PROVIDER_DOWNLOAD_RETRY']=='3'\nprint('x'*16000)\nprint('fixture-provider-unavailable https://provider.invalid/archive?token=synthetic-provider-query-value',file=sys.stderr)\nraise SystemExit(17)\n")
+            tool.chmod(0o700)
+            result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "PreparationTests.test_backup_module_uses_explicit_identity_and_keeps_bucket_scope"], env={**os.environ, "PATH": directory + os.pathsep + os.environ["PATH"]}, capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("fixture-provider-unavailable", result.stderr)
+            self.assertNotIn("synthetic-provider-query-value", result.stderr)
+            self.assertLess(len(result.stderr), 11000)
+
+    def test_CI_tool_fetches_have_bounded_transient_retries_and_still_require_checksums(self):
+        ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        steps = ci["jobs"]["portable-sqlite-ops"]["steps"]
+        script = next(step["run"] for step in steps if step.get("name") == "Install tested Restic from official checksums")
+        downloads = [line for line in script.splitlines() if line.strip().startswith("curl ")]
+        self.assertEqual(len(downloads), 2)
+        for line in downloads:
+            for option in ["--retry 3", "--retry-max-time 120", "--connect-timeout 10", "--max-time 60", "--proto '=https'", "--proto-redir '=https'"]:
+                self.assertIn(option, line)
+            self.assertNotIn("--retry-all-errors", line)
+            self.assertNotIn("--insecure", line)
+        self.assertIn("sha256sum --check --strict", script)
+        self.assertLess(script.index("sha256sum --check --strict"), script.index("chmod 0555"))
 
     def test_repository_and_host_identity_have_no_implicit_live_defaults(self):
         provider = (ROOT / "infra/providers.tf").read_text()

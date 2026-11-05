@@ -93,8 +93,8 @@ jobs:
           cd "$RUNNER_TEMP"
           asset="restic_${version}_linux_amd64.bz2"
           base="https://github.com/restic/restic/releases/download/v${version}"
-          curl --fail --silent --show-error --location "$base/$asset" -o "$asset"
-          curl --fail --silent --show-error --location "$base/SHA256SUMS" -o SHA256SUMS
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 3 --retry-max-time 120 --connect-timeout 10 --max-time 60 "$base/$asset" -o "$asset"
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 3 --retry-max-time 120 --connect-timeout 10 --max-time 60 "$base/SHA256SUMS" -o SHA256SUMS
           grep " $asset$" SHA256SUMS | sha256sum --check --strict
           mkdir -p restic-bin
           bzip2 --decompress --stdout "$asset" > restic-bin/restic
