@@ -13,7 +13,7 @@ MEDIA = "application/vnd.oci.image."
 MAX_ARCHIVE = 1024 * 1024 * 1024
 MAX_JSON = 2 * 1024 * 1024
 REPOSITORY = "scowalt/rngwars-game"
-NATIVE_CHECKS = {"production_rejects_unmarked_empty_population", "offline_initialization_without_web_host", "offline_initialization_rejects_root", "encrypted_empty_baseline_backup_restore", "production_accepts_initialized_empty_restore", "native_SQLite_signup", "profile_update", "practice_creation", "production_restart_with_same_DB_and_token", "bundled_frontend", "distributed_legal_notices", "production_does_not_create_missing_DB"}
+NATIVE_CHECKS = {"production_rejects_unmarked_empty_population", "offline_initialization_without_web_host", "offline_initialization_rejects_root", "encrypted_empty_baseline_backup_restore", "production_accepts_initialized_empty_restore", "native_SQLite_signup", "profile_update", "practice_creation", "production_restart_with_same_DB_and_token", "bundled_frontend", "distributed_legal_notices", "production_does_not_create_missing_DB", "multiplayer_sequential_join_completion"}
 
 
 def inspect(path, revision):

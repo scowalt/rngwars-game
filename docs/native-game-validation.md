@@ -15,8 +15,12 @@ through the real operator and an isolated encrypted local Restic repository. No 
 or credentials are involved. Full snapshot equivalence and repository checks must pass. The restored
 file is placed at another new path in the owned volume; Production must accept it with an empty
 leaderboard before the first signup. The token and changed username must survive a Production
-restart. Practice-match creation, bundled frontend and legal notices are checked. Production also
-must reject a missing database without creating it. Original synthetic files are not overwritten.
+restart. Practice-match creation, bundled frontend and legal notices are checked. A pinned Bun
+client shares only the fixture's network namespace and joins two real SignalR clients sequentially.
+Both must observe countdown, rolling, reveal and completion, with persisted ratings and history.
+This covers the second player's transition from Connecting without host ports or runtime egress.
+Production also must reject a missing database without creating it. Original synthetic files are not
+overwritten.
 
 The deployment template and fixture both enable Docker's init process (`init: true` / `--init`). A
 native comparison found that a fatal startup exception left .NET running as PID 1; changing only the

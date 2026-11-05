@@ -158,7 +158,8 @@ module MatchAgent =
                                     state
 
                             let newState =
-                                if newState.Player1Connected && newState.Player2Connected && newState.Phase = Created then
+                                if newState.Player1Connected && newState.Player2Connected
+                                   && (newState.Phase = Created || newState.Phase = Connecting) then
                                     let s = { newState with Phase = Countdown 3 }
                                     onEvent(PhaseChangedEvent(matchId, "countdown", Map.ofList [ "timeRemaining", box 3000; "count", box 3 ]))
                                     scheduleTimeout inbox 1000
