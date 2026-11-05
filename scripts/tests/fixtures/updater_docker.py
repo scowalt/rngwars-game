@@ -35,7 +35,7 @@ elif args[0] == "create":
     mount = dict(item.split("=", 1) for item in option("--mount").split(","))
     labels = dict(args[i + 1].split("=", 1) for i, arg in enumerate(args) if arg == "--label")
     network = option("--network")
-    containers[identifier] = {"Id": identifier, "Name": "/" + option("--name"), "State": {"Running": False}, "Config": {"Image": args[-1], "User": option("--user"), "Labels": labels, "Entrypoint": ["/app/game-entrypoint.sh"], "Cmd": ["dotnet", "RNGWars.Api.dll"]}, "HostConfig": {"PortBindings": {}, "Init": True, "ReadonlyRootfs": True, "Privileged": False, "CapDrop": ["ALL"], "SecurityOpt": ["no-new-privileges"], "NetworkMode": network}, "Mounts": [{"Type": "bind", "Source": mount["src"], "Destination": "/data", "RW": True}], "NetworkSettings": {"Networks": {network: {"NetworkID": policy["network_id"], "Aliases": []}}}}
+    containers[identifier] = {"Id": identifier, "Name": "/" + option("--name"), "State": {"Running": False}, "Config": {"Image": args[-1], "User": option("--user"), "Labels": labels, "Entrypoint": ["/app/game-entrypoint.sh"], "Cmd": ["dotnet", "RNGWars.Api.dll"]}, "HostConfig": {"PortBindings": {}, "Init": True, "ReadonlyRootfs": True, "Privileged": False, "CapDrop": ["ALL"], "SecurityOpt": ["no-new-privileges"], "NetworkMode": network}, "Mounts": [{"Type": "bind", "Source": mount["src"], "Destination": "/data", "RW": True}], "NetworkSettings": {"Networks": {network: {"NetworkID": "", "Aliases": []}}}}
     result = identifier
     if state["fault"] == "ambiguous-create":
         code = 1
@@ -43,6 +43,9 @@ elif args[0] == "create":
 elif args[0] == "start":
     container = containers[args[1]]
     container["State"]["Running"] = True
+    for name, settings in container["NetworkSettings"]["Networks"].items():
+        if name == policy["network"]:
+            settings["NetworkID"] = policy["network_id"]
     if state["fault"] == "candidate-schema" and container["HostConfig"]["NetworkMode"] == "none":
         with closing(sqlite3.connect(Path(container["Mounts"][0]["Source"]) / "game.sqlite3")) as db:
             db.execute("CREATE TABLE unsafe_migration(id INTEGER)")

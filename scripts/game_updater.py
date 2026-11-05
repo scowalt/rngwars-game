@@ -142,7 +142,8 @@ class Updater:
         require(running is None or value["State"]["Running"] is running, "updater_workload_state")
         require(network is None or (host["NetworkMode"] == network and set(value["NetworkSettings"]["Networks"]) == {network}), "updater_workload_network")
         if network == self.policy["network"]:
-            require(value["NetworkSettings"]["Networks"][network]["NetworkID"] == self.policy["network_id"], "updater_workload_network_identity")
+            actual = value["NetworkSettings"]["Networks"][network]["NetworkID"]
+            require(actual == self.policy["network_id"] or (value["State"]["Running"] is False and actual == ""), "updater_workload_network_identity")
         return value
 
     def healthy(self, identifier):
@@ -161,7 +162,8 @@ class Updater:
         result = self.run([*self.docker, "create", "--init", "--name", name, "--network", network, "--restart", "unless-stopped", "--user", f"{self.policy['data_uid']}:{self.policy['data_gid']}", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--ulimit", "core=0", "--memory", "768m", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m", "--mount", "type=bind,src=" + str(directory) + ",dst=/data", "-e", "ASPNETCORE_ENVIRONMENT=Production", "-e", "DOTNET_ENVIRONMENT=Production", "-e", "DATABASE_PATH=/data/game.sqlite3", "-e", "ASPNETCORE_URLS=http://0.0.0.0:5000", "-e", "SENTRY_DSN=", "--label", self.policy["owner_key"] + "=" + self.policy["owner_value"], "--label", "info.rngwars.deployment-run=" + str(run_id), "--label", "com.centurylinklabs.watchtower.enable=false", "--log-opt", "max-size=10m", "--log-opt", "max-file=3", "--health-cmd", "curl -fsS http://127.0.0.1:5000/api/health", "--health-interval", "30s", "--health-timeout", "5s", "--health-retries", "3", "--health-start-period", "40s", image], timeout=120)
         identifier = result.stdout.decode().strip()
         require(re.fullmatch(r"[a-f0-9]{64}", identifier), "updater_created_identity")
-        self.container(identifier, image, directory, running=False, network=network)
+        value = self.container(identifier, image, directory, running=False, network=network)
+        require(value["Name"] == "/" + name and value["Config"]["Labels"].get("info.rngwars.deployment-run") == str(run_id) and "game" not in (value["NetworkSettings"]["Networks"][network].get("Aliases") or []), "updater_created_binding")
         return identifier
 
     def apply(self, envelope):
@@ -249,7 +251,7 @@ class Updater:
             self.run([*self.docker, "network", "connect", "--alias", "game", p["network"], new])
             self.run([*self.docker, "rename", new, p["workload"]])
             require(self.healthy(new), "updater_activated_health")
-            value = self.container(new, image, mount, running=True)
+            value = self.container(new, image, mount, running=True, network=p["network"])
             require(value["Name"] == "/" + p["workload"] and value["NetworkSettings"]["Networks"][p["network"]]["NetworkID"] == p["network_id"] and "game" in value["NetworkSettings"]["Networks"][p["network"]]["Aliases"], "updater_activation_identity")
             save(self.state / "current.json", {"container_id": new, "image": image}, replace=True)
             outcome = "game_deployed"
@@ -272,6 +274,8 @@ class Updater:
                         self.run([*self.docker, "rename", old["container_id"], p["workload"]])
                     self.run([*self.docker, "start", old["container_id"]])
                     require(self.healthy(old["container_id"]), "updater_rollback_health")
+                    restored = self.container(old["container_id"], old["image"], mount, running=True, network=p["network"])
+                    require(restored["Name"] == "/" + p["workload"] and "game" in restored["NetworkSettings"]["Networks"][p["network"]]["Aliases"], "updater_rollback_network")
                     save(self.state / "current.json", old, replace=True)
                     outcome = "game_rolled_back"
                 except Exception:
