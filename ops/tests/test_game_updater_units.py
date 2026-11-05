@@ -28,6 +28,8 @@ class UpdaterUnitTests(unittest.TestCase):
             self.assertIn("MaxConnections=1", socket)
             for setting in ["User=root", "NoNewPrivileges=yes", "ProtectSystem=strict", "ProtectHome=yes", "StandardInput=socket", "StandardOutput=socket", "KillMode=control-group"]:
                 self.assertIn(setting, service)
+            self.assertIn("AmbientCapabilities=CAP_SETUID", service)
+            self.assertIn("CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETUID CAP_SETGID", service)
             self.assertIn("NoNewPrivileges=yes", (source / "rngwars-game-ssh.service").read_text())
 
 

@@ -31,6 +31,7 @@ LockPersonality=yes
 RestrictRealtime=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETUID CAP_SETGID
+AmbientCapabilities=CAP_SETUID
 ReadWritePaths={state_directory} {work_directory} {data_directory} {backup_state_directory}
 LimitCORE=0
 MemoryMax=512M

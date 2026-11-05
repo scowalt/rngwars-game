@@ -40,6 +40,12 @@ filesystem/capability restrictions. The unit file is a template: render private 
 only under a separately reviewed exact-target plan. The existing private SSH listener keeps its own
 hardening; no public listener or network-policy expansion is needed.
 
+The root worker explicitly retains `CAP_SETUID` during execution so it can drop to the database
+account. This capability was already in its unchanged bounding set; `NoNewPrivileges` and all other
+sandbox restrictions remain enabled. The database child must run as UID/GID 10001 with zero
+permitted, effective and ambient capabilities. A native transient-unit canary verifies this under
+the rendered worker restrictions, rather than assuming that a bounding-set entry is effective.
+
 ## Independent authority
 
 `game_deploy_authority.py inspect --policy <absolute-private-policy>` remains a non-executing

@@ -24,6 +24,21 @@ def run(args, **kwargs):
     return result.stdout
 
 
+def sandbox_identity_check(base):
+    state = base / "capability-check-state"
+    state.mkdir(mode=0o700)
+    text = (ROOT / "ops/production/game-deployment/rngwars-game-updater@.service").read_text().format(helper_directory=base / "helpers", policy_file=state / "unused.json", tool_directory=base / "bin", state_directory=state, work_directory=base / "work", data_directory=base / "data", backup_state_directory=base / "backup-state")
+    names = {"User", "Group", "NoNewPrivileges", "PrivateTmp", "ProtectSystem", "ProtectHome", "ProtectKernelTunables", "ProtectKernelModules", "ProtectKernelLogs", "ProtectControlGroups", "RestrictSUIDSGID", "LockPersonality", "RestrictRealtime", "RestrictAddressFamilies", "CapabilityBoundingSet", "AmbientCapabilities", "ReadWritePaths", "MemoryMax", "TasksMax", "LimitCORE"}
+    args = ["systemd-run", "--unit=rngwars-updater-native-capabilities-" + str(os.getpid()), "--collect", "--wait", "--pipe"]
+    for line in text.splitlines():
+        if line.partition("=")[0] in names:
+            args.extend(["--property", line])
+    child = "import json,os; from pathlib import Path; values={line.partition(':')[0]:line.partition(':')[2].strip() for line in Path('/proc/self/status').read_text().splitlines() if line.startswith(('CapPrm:','CapEff:','CapAmb:','NoNewPrivs:'))}; print(json.dumps({'uid':os.geteuid(),'gid':os.getegid(),**values}))"
+    program = "import json,subprocess; result=subprocess.run(['/usr/bin/setpriv','--reuid=10001','--regid=10001','--clear-groups','--no-new-privs','/usr/bin/python3','-I','-c'," + repr(child) + "],capture_output=True,text=True); assert result.returncode==0,'sandbox_identity_drop_failed'; value=json.loads(result.stdout); assert value['uid']==value['gid']==10001 and value['NoNewPrivs']=='1' and all(int(value[key],16)==0 for key in ['CapPrm','CapEff','CapAmb']); print('sandboxed_identity_drop_verified')"
+    output = run([*args, "/usr/bin/python3", "-I", "-c", program])
+    assert b"sandboxed_identity_drop_verified" in output
+
+
 def main():
     assert os.geteuid() == 0 and os.uname().machine == "aarch64"
     assert os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted" and os.environ.get("GITHUB_REPOSITORY_ID") == "1442331254"
@@ -56,6 +71,7 @@ def main():
             path = base / name
             path.mkdir(mode=0o700)
             os.chown(path, 10001, 10001)
+        sandbox_identity_check(base)
         database = base / "data/game.sqlite3"
         run([docker, "run", "--rm", "--init", "--network", "none", "--user", "10001:10001", "--mount", "type=bind,src=" + str(database.parent) + ",dst=/data", "--entrypoint", "dotnet", sys.argv[1], "RNGWars.Api.dll", "init-db", "/data/game.sqlite3"])
         derived = "rngwars-updater-native-fixture:" + str(os.getpid())
@@ -171,7 +187,7 @@ def main():
         assert code != 0 and json.loads(output)["status"] == "game_rolled_back", "native_rollback_failed"
         assert json.loads((fixture.root / "state/current.json").read_text()) == current
         assert json.loads(run([*user, "/usr/bin/python3", str(helpers / "game_recovery.py"), "inspect", str(database)]))["content"] == before_rollback["content"]
-        result = {"native_container_update": True, "native_captured_container_rollback": True, "real_encrypted_local_restore": True, "database_identity_and_content_preserved": True, "authenticated_profile_survived_update": True, "real_private_socket_peer_checked": True, "SSH_adapter_kept_unprivileged": True, "provider_and_registry_transports_are_synthetic": True, "live_authority_or_release_cryptography_not_claimed": True}
+        result = {"native_container_update": True, "native_captured_container_rollback": True, "real_encrypted_local_restore": True, "database_identity_and_content_preserved": True, "authenticated_profile_survived_update": True, "real_private_socket_peer_checked": True, "SSH_adapter_kept_unprivileged": True, "sandboxed_database_identity_drop_verified": True, "provider_and_registry_transports_are_synthetic": True, "live_authority_or_release_cryptography_not_claimed": True}
         destination = Path(os.environ["RUNNER_TEMP"]) / "native-updater-result.json"
         destination.write_text(json.dumps(result, indent=2))
         destination.chmod(0o644)
