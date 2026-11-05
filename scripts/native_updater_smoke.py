@@ -145,7 +145,14 @@ def main():
                         worker.wait(timeout=920)
                         connection.shutdown(socket.SHUT_WR)
                         output, error = client.communicate(timeout=15)
-                        return client.returncode, output, worker.stderr.read()
+                        diagnostic = worker.stderr.read()
+                        failure = fixture.root / "state" / ("attempt-" + str(envelope["run_id"])) / "failure.json"
+                        record = json.loads(failure.read_text()) if failure.exists() else {}
+                        match = re.search(rb"Game updater blocked: ([a-z_]+)", diagnostic)
+                        report = {"fixture_run": envelope["run_id"], "peer_uid": peer_uid, "client_exit": client.returncode, "worker_exit": worker.returncode, "stage": record.get("stage"), "error_class": record.get("error_class"), "code": record.get("code") or (match.group(1).decode() if match else None)}
+                        print(json.dumps(report), flush=True)
+                        (Path(os.environ["RUNNER_TEMP"]) / "native-updater-diagnostic.json").write_text(json.dumps(report, indent=2))
+                        return client.returncode, output, diagnostic
         before = json.loads(run([*user, "/usr/bin/python3", str(helpers / "game_recovery.py"), "inspect", str(database)]))
         code, output, error = invoke(stage(501))
         assert code == 0 and json.loads(output)["status"] == "game_deployed", "native_update_failed"
