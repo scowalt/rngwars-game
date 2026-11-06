@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 
+import game_automation
 import marketing_artifact as metadata
 from marketing_artifact import Blocked, require, unique_object
 from marketing_producer import identifier
@@ -25,11 +26,14 @@ REPOSITORY = "scowalt/rngwars-game"
 WORKFLOW = REPOSITORY + "/.github/workflows/game-deployment.yml@refs/heads/main"
 
 
-def configuration():
+def configuration(automatic=False):
     environment = metadata.github("/environments/game-production")
     require(environment["name"] == "game-production" and environment["can_admins_bypass"] is False and environment["deployment_branch_policy"] == {"protected_branches": False, "custom_branch_policies": True}, "private_environment_policy")
     reviewers = [rule for rule in environment["protection_rules"] if rule["type"] == "required_reviewers"]
-    require(len(reviewers) == 1 and reviewers[0]["prevent_self_review"] is False and [(item["type"], item["reviewer"]["id"]) for item in reviewers[0]["reviewers"]] == [("User", 1100550)], "private_environment_reviewer")
+    if automatic:
+        require(not reviewers, "automatic_deployment_environment")
+    else:
+        require(len(reviewers) == 1 and reviewers[0]["prevent_self_review"] is False and [(item["type"], item["reviewer"]["id"]) for item in reviewers[0]["reviewers"]] == [("User", 1100550)], "private_environment_reviewer")
     branches = metadata.github("/environments/game-production/deployment-branch-policies")
     require(branches["total_count"] == len(branches["branch_policies"]) == 1 and [(item["name"], item["type"]) for item in branches["branch_policies"]] == [("main", "branch")], "private_environment_branch")
     return environment
@@ -37,16 +41,19 @@ def configuration():
 
 def resolve(env):
     require(env.get("GITHUB_ACTIONS") == "true" and env.get("GITHUB_REPOSITORY") == REPOSITORY and env.get("GITHUB_REPOSITORY_ID") == "1442331254" and env.get("GITHUB_REPOSITORY_OWNER_ID") == "1100550", "private_repository_context")
-    require(env.get("GITHUB_REF") == "refs/heads/main" and env.get("GITHUB_WORKFLOW_REF") == WORKFLOW and env.get("GITHUB_EVENT_NAME") == "workflow_dispatch" and env.get("GITHUB_RUN_ATTEMPT") == "1" and env.get("RUNNER_ENVIRONMENT") == "github-hosted", "private_workflow_context")
+    require(env.get("GITHUB_REF") == "refs/heads/main" and env.get("GITHUB_WORKFLOW_REF") == WORKFLOW and env.get("GITHUB_EVENT_NAME") in {"workflow_dispatch", "workflow_run"} and env.get("GITHUB_RUN_ATTEMPT") == "1" and env.get("RUNNER_ENVIRONMENT") == "github-hosted", "private_workflow_context")
     require(env.get("GITHUB_ACTOR") == env.get("GITHUB_TRIGGERING_ACTOR") == "scowalt" and env.get("GITHUB_ACTOR_ID") == "1100550", "private_actor")
     revision = env.get("GITHUB_SHA", "")
     require(re.fullmatch(r"[a-f0-9]{40}", revision) and env.get("GITHUB_WORKFLOW_SHA") == env.get("APPROVED_REVISION") == revision, "private_controller_revision")
     operation = env.get("GAME_PREFLIGHT_OPERATION")
+    automatic = env.get("GITHUB_EVENT_NAME") == "workflow_run"
+    if automatic:
+        require(env.get("GAME_AUTOMATIC_CD_ENABLED") == "true" and operation == "deploy", "automatic_deployment_disabled")
     require(operation in {"verify-release", "private-preflight", "deploy"}, "private_operation")
     if operation in {"private-preflight", "deploy"}:
         flag = "GAME_DEPLOYMENT_ENABLED" if operation == "deploy" else "GAME_PRIVATE_PREFLIGHT_ENABLED"
         require(env.get(flag) == "true", "private_operation_disabled")
-        configuration()
+        configuration(automatic)
     run_id = identifier(env.get("GITHUB_RUN_ID", ""))
     ci_run = identifier(env.get("SOURCE_CI_RUN_ID", ""))
     identity = metadata.resolve_ci(ci_run, revision)
@@ -57,7 +64,10 @@ def resolve(env):
     workflow = metadata.github("/actions/workflows/game-deployment.yml")
     run = metadata.github(f"/actions/runs/{run_id}")
     require(workflow["state"] == "active" and workflow["path"] == run["path"] == ".github/workflows/game-deployment.yml" and run["workflow_id"] == workflow["id"] and run["id"] == run_id, "private_workflow_identity")
-    require(run["repository"]["id"] == run["head_repository"]["id"] == 1442331254 and run["head_sha"] == revision and run["head_branch"] == "main" and run["actor"]["id"] == run["triggering_actor"]["id"] == 1100550 and run["event"] == "workflow_dispatch" and type(run["run_attempt"]) is int and run["run_attempt"] == 1 and run["status"] == "in_progress", "private_run_identity")
+    require(run["repository"]["id"] == run["head_repository"]["id"] == 1442331254 and run["head_sha"] == revision and run["head_branch"] == "main" and run["actor"]["id"] == run["triggering_actor"]["id"] == 1100550 and run["event"] == env["GITHUB_EVENT_NAME"] and type(run["run_attempt"]) is int and run["run_attempt"] == 1 and run["status"] == "in_progress", "private_run_identity")
+    if automatic:
+        release = game_automation.publication(identifier(env.get("PUBLICATION_RUN_ID", "")), revision)
+        require(release["ci_run_id"] == ci_run and release["image_source_revision"] == env.get("IMAGE_SOURCE_REVISION") and release["image_digest"] == env.get("EXPECTED_IMAGE_DIGEST"), "automatic_release_binding")
     return {"status": "private_preflight_context_only", "controller_revision": revision, "run_id": run_id, "ci_run_id": ci_run}
 
 
@@ -65,16 +75,45 @@ def private_authority(env):
     operation = env.get("GAME_PREFLIGHT_OPERATION")
     require(operation in {"private-preflight", "deploy"} and env.get("GITHUB_JOB") == ("deploy" if operation == "deploy" else "preflight"), "private_probe_not_selected")
     identity = resolve(env)
-    environment = configuration()
-    reviews = metadata.github(f"/actions/runs/{identity['run_id']}/approvals")
-    selected = [review for review in reviews if any(item["id"] == environment["id"] and item["name"] == "game-production" for item in review["environments"])]
-    require(len(selected) == 1 and selected[0]["state"] == "approved" and selected[0]["user"]["id"] == 1100550, "private_review_missing")
+    automatic = env.get("GITHUB_EVENT_NAME") == "workflow_run"
+    environment = configuration(automatic)
+    if not automatic:
+        reviews = metadata.github(f"/actions/runs/{identity['run_id']}/approvals")
+        selected = [review for review in reviews if any(item["id"] == environment["id"] and item["name"] == "game-production" for item in review["environments"])]
+        require(len(selected) == 1 and selected[0]["state"] == "approved" and selected[0]["user"]["id"] == 1100550, "private_review_missing")
     inventory = metadata.github(f"/actions/runs/{identity['run_id']}/attempts/1/jobs?per_page=100")
-    require(inventory["total_count"] == len(inventory["jobs"]) == 3 and {job["name"] for job in inventory["jobs"]} == {"resolve", "Private transport preflight", "Deploy verified game release"}, "private_job_inventory")
+    expected = {"resolve", "Deploy verified game release"} | (set() if automatic else {"Private transport preflight"})
+    require(inventory["total_count"] == len(inventory["jobs"]) == len(expected) and {job["name"] for job in inventory["jobs"]} == expected, "private_job_inventory")
     selected_name = "Deploy verified game release" if operation == "deploy" else "Private transport preflight"
     jobs = [job for job in inventory["jobs"] if job["name"] == selected_name]
     require(len(jobs) == 1 and jobs[0]["run_id"] == identity["run_id"] and jobs[0]["status"] == "in_progress" and jobs[0]["labels"] == ["ubuntu-24.04"], "private_job_runner")
     return identity
+
+
+def automatic_inputs(env):
+    require(env.get("GITHUB_JOB") == "resolve" and env.get("GITHUB_EVENT_NAME") == "workflow_run" and env.get("GAME_AUTOMATIC_CD_ENABLED") == "true" and env.get("GAME_DEPLOYMENT_ENABLED") == "true", "automatic_inputs_context")
+    revision = env.get("GITHUB_SHA", "")
+    require(re.fullmatch(r"[a-f0-9]{40}", revision) and env.get("GITHUB_WORKFLOW_SHA") == revision, "automatic_inputs_revision")
+    run_id = identifier(env.get("PUBLICATION_RUN_ID", ""))
+    producer = metadata.github(f"/actions/runs/{run_id}")
+    if producer["head_sha"] != revision or metadata.github("/git/ref/heads/main")["object"]["sha"] != revision:
+        with Path(env["GITHUB_OUTPUT"]).open("a") as stream:
+            stream.write("eligible=false\n")
+        return {"status": "automatic_source_superseded", "eligible": False}
+    jobs = metadata.github(f"/actions/runs/{run_id}/attempts/1/jobs?per_page=100")
+    if any(job["name"] == "publish" and job["conclusion"] == "skipped" for job in jobs["jobs"]):
+        with Path(env["GITHUB_OUTPUT"]).open("a") as stream:
+            stream.write("eligible=false\n")
+        return {"status": "automatic_publisher_did_not_publish", "eligible": False}
+    release = game_automation.publication(run_id, revision)
+    values = {"APPROVED_REVISION": revision, "SOURCE_CI_RUN_ID": str(release["ci_run_id"]), "IMAGE_SOURCE_REVISION": release["image_source_revision"], "EXPECTED_IMAGE_DIGEST": release["image_digest"], "PUBLICATION_RUN_ID": str(run_id), "GAME_PREFLIGHT_OPERATION": "deploy"}
+    context = resolve({**env, **values})
+    with Path(env["GITHUB_ENV"]).open("a") as stream:
+        for name, value in values.items():
+            stream.write(name + "=" + value + "\n")
+    with Path(env["GITHUB_OUTPUT"]).open("a") as stream:
+        stream.write("eligible=true\nci_run_id=" + values["SOURCE_CI_RUN_ID"] + "\nimage_source_revision=" + values["IMAGE_SOURCE_REVISION"] + "\nimage_sha256=" + values["EXPECTED_IMAGE_DIGEST"].removeprefix("sha256:") + "\npublication_run_id=" + str(run_id) + "\n")
+    return {**context, "status": "automatic_release_resolved", "eligible": True}
 
 
 def deployment_request(env):
@@ -168,15 +207,24 @@ def probe(env):
             except subprocess.TimeoutExpired:
                 pass
         if env.get("GAME_PREFLIGHT_OPERATION") == "deploy":
-            private_authority(env)
             require(env.get("GH_TOKEN"), "private_job_token_missing")
             envelope = json.dumps({"version": 1, "run_id": identity["run_id"], "github_token": env["GH_TOKEN"]}).encode()
-            deployed = subprocess.run([*command[:-1], "rngwars-game-deploy-v1"], env=environment, input=envelope, capture_output=True, timeout=920)
-            require(deployed.returncode in {0, 1} and 0 < len(deployed.stdout) <= 4096, "private_deployment_outcome_unconfirmed")
-            reply = json.loads(deployed.stdout, object_pairs_hook=unique_object)
-            require(type(reply) is dict and set(reply) == {"status", "run_id", "controller_revision", "image_digest", "source_revision", "publication_run_id"} and reply["run_id"] == identity["run_id"] and reply["controller_revision"] == identity["controller_revision"] and reply["image_digest"] == env["EXPECTED_IMAGE_DIGEST"] and reply["source_revision"] == env["IMAGE_SOURCE_REVISION"] and reply["publication_run_id"] == identifier(env["PUBLICATION_RUN_ID"]), "private_deployment_reply")
-            require((deployed.returncode == 0 and reply["status"] == "game_deployed") or (deployed.returncode == 1 and reply["status"] in {"game_rolled_back", "deployment_blocked_before_live_change", "operator_recovery_required"}), "private_deployment_reply")
-            return reply
+            wait_deadline = time.monotonic() + 1800
+            while True:
+                private_authority(env)
+                deployed = subprocess.run([*command[:-1], "rngwars-game-deploy-v1"], env=environment, input=envelope, capture_output=True, timeout=920)
+                require(deployed.returncode in {0, 1, 75} and 0 < len(deployed.stdout) <= 4096, "private_deployment_outcome_unconfirmed")
+                reply = json.loads(deployed.stdout, object_pairs_hook=unique_object)
+                fields = {"status", "run_id", "controller_revision", "image_digest", "source_revision", "publication_run_id"} | ({"retry_after_seconds"} if deployed.returncode == 75 else set())
+                require(type(reply) is dict and set(reply) == fields and reply["run_id"] == identity["run_id"] and reply["controller_revision"] == identity["controller_revision"] and reply["image_digest"] == env["EXPECTED_IMAGE_DIGEST"] and reply["source_revision"] == env["IMAGE_SOURCE_REVISION"] and reply["publication_run_id"] == identifier(env["PUBLICATION_RUN_ID"]), "private_deployment_reply")
+                if deployed.returncode == 75:
+                    require(env.get("GITHUB_EVENT_NAME") == "workflow_run" and reply["status"] == "deployment_deferred" and type(reply["retry_after_seconds"]) is int and 1 <= reply["retry_after_seconds"] <= 1500, "private_deployment_deferral")
+                    require(time.monotonic() + reply["retry_after_seconds"] <= wait_deadline, "private_deployment_wait_expired")
+                    print("Automatic deployment deferred before mutation; waiting for the backup window.", file=sys.stderr)
+                    time.sleep(reply["retry_after_seconds"])
+                    continue
+                require((deployed.returncode == 0 and reply["status"] == "game_deployed") or (deployed.returncode == 1 and reply["status"] in {"game_rolled_back", "deployment_blocked_before_live_change", "operator_recovery_required"}), "private_deployment_reply")
+                return reply
         return {**identity, "status": "private_transport_verified_no_deployment", "negative_connection_checks": 3, "probe_protocol": 1}
     finally:
         if process is not None:
@@ -254,12 +302,12 @@ def main():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     os.umask(0o077)
     parser = argparse.ArgumentParser()
-    parser.add_argument("operation", choices=["resolve", "probe", "deploy", "request", "cleanup"])
+    parser.add_argument("operation", choices=["resolve", "automatic", "probe", "deploy", "request", "cleanup"])
     args = parser.parse_args()
     try:
         require(args.operation != "deploy" or os.environ.get("GAME_PREFLIGHT_OPERATION") == "deploy", "private_deploy_not_selected")
         require(args.operation != "probe" or os.environ.get("GAME_PREFLIGHT_OPERATION") == "private-preflight", "private_probe_not_selected")
-        action = {"resolve": resolve, "probe": probe, "deploy": probe, "request": deployment_request, "cleanup": cleanup}[args.operation]
+        action = {"resolve": resolve, "automatic": automatic_inputs, "probe": probe, "deploy": probe, "request": deployment_request, "cleanup": cleanup}[args.operation]
         result = action(os.environ)
         print(json.dumps(result, sort_keys=True))
         return 1 if args.operation == "deploy" and result["status"] != "game_deployed" else 0

@@ -1,10 +1,14 @@
 name: Game deployment
 
 on:
+  workflow_run:
+    workflows: [Game image publication]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       revision:
-        description: Exact current main controller commit
+        description: Exact current main controller commit for read-only verification
         required: true
         type: string
       ci_run_id:
@@ -24,13 +28,10 @@ on:
         required: true
         type: string
       operation:
-        description: Release verification, private preflight, or reviewed game update
+        description: Manual verification never receives private deployment capability
         type: choice
         default: verify-release
-        options:
-          - verify-release
-          - private-preflight
-          - deploy
+        options: [verify-release]
 
 permissions:
   contents: read
@@ -40,32 +41,54 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  APPROVED_REVISION: ${{ inputs.revision }}
+  APPROVED_REVISION: ${{ github.event_name == 'workflow_run' && github.sha || inputs.revision }}
   SOURCE_CI_RUN_ID: ${{ inputs.ci_run_id }}
-  GAME_PREFLIGHT_OPERATION: ${{ inputs.operation }}
-  GAME_PRIVATE_PREFLIGHT_ENABLED: ${{ vars.GAME_PRIVATE_PREFLIGHT_ENABLED }}
+  GAME_PREFLIGHT_OPERATION: ${{ github.event_name == 'workflow_run' && 'deploy' || 'verify-release' }}
+  GAME_AUTOMATIC_CD_ENABLED: ${{ vars.GAME_AUTOMATIC_CD_ENABLED }}
   GAME_DEPLOYMENT_ENABLED: ${{ vars.GAME_DEPLOYMENT_ENABLED }}
   IMAGE_SOURCE_REVISION: ${{ inputs.image_source_revision }}
   EXPECTED_IMAGE_DIGEST: ${{ inputs.image_digest }}
-  PUBLICATION_RUN_ID: ${{ inputs.publication_run_id }}
+  PUBLICATION_RUN_ID: ${{ github.event.workflow_run.id || inputs.publication_run_id }}
 
 jobs:
   resolve:
+    if: >-
+      github.repository_id == '1442331254' && github.actor_id == '1100550' &&
+      github.ref == 'refs/heads/main' && github.run_attempt == 1 &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && vars.GAME_AUTOMATIC_CD_ENABLED == 'true' &&
+      vars.GAME_DEPLOYMENT_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.id == 1442331254 &&
+      github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'workflow_run'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
       actions: read
+    outputs:
+      eligible: ${{ steps.automatic.outputs.eligible }}
+      ci_run_id: ${{ steps.automatic.outputs.ci_run_id }}
+      image_source_revision: ${{ steps.automatic.outputs.image_source_revision }}
+      image_sha256: ${{ steps.automatic.outputs.image_sha256 }}
+      publication_run_id: ${{ steps.automatic.outputs.publication_run_id }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
-      - name: Resolve trusted main controller and existing protection
+      - name: Independently resolve the automatic publication and main push CI
+        if: github.event_name == 'workflow_run'
+        id: automatic
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/game_network.py automatic
+      - name: Resolve trusted main for manual read-only verification
+        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/game_network.py resolve
       - name: Fetch and verify the exact public release without account credentials
+        if: github.event_name == 'workflow_dispatch' || steps.automatic.outputs.eligible == 'true'
         run: |
           set -eu
           python3 scripts/game_release.py fetch "$RUNNER_TEMP/game-private-evidence" \
@@ -82,25 +105,23 @@ jobs:
               stream.write("Image: `" + receipt["image"] + "`\n\n")
               stream.write("Source: `" + receipt["source_revision"] + "`\n\n")
               stream.write("Publication run: " + str(receipt["publication_run_id"]) + "\n\n")
-              if os.environ["GAME_PREFLIGHT_OPERATION"] == "deploy":
-                  stream.write("Requested: update the game to this exact release. Review also accepts a brief single-instance interruption and compatible captured-image rollback; the database is never restored automatically.\n")
-              else:
-                  stream.write("Private preflight tests transport only. No game deployment or data mutation is authorized.\n")
+              stream.write("Automatic deployment is authorized only by verified owner main-push CI and its successful signed publication. Manual verification performs no deployment.\n")
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: github.event_name == 'workflow_dispatch' || steps.automatic.outputs.eligible == 'true'
         with:
           name: game-release-verification-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/game-private-release.json
           if-no-files-found: error
           overwrite: false
           retention-days: 14
-      - name: Create the exact public deployment request before environment review
-        if: inputs.operation == 'deploy'
+      - name: Create the exact public deployment request before private access
+        if: steps.automatic.outputs.eligible == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/game_network.py request > "$RUNNER_TEMP/request.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: inputs.operation == 'deploy'
+        if: steps.automatic.outputs.eligible == 'true'
         with:
           name: game-deployment-request-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/request.json
@@ -108,74 +129,28 @@ jobs:
           overwrite: false
           retention-days: 14
 
-  preflight:
-    name: Private transport preflight
-    if: inputs.operation == 'private-preflight'
-    needs: resolve
-    environment: game-production
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      actions: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Recheck trusted source before installing the private-network client
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/game_network.py resolve
-      - name: Install pinned native Tailscale client without changing system services
-        run: |
-          set -eu
-          umask 077
-          version=1.104.1
-          tools="$RUNNER_TEMP/rngwars-tailscale-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          mkdir -m 0700 "$tools"
-          archive="$tools/tailscale.tgz"
-          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
-            --max-time 120 --max-filesize 104857600 \
-            "https://pkgs.tailscale.com/stable/tailscale_${version}_amd64.tgz" -o "$archive"
-          printf '%s  %s\n' '108d1d96ecf410d305571e173516f27038f870919a9b89c914a167c6d33a4528' "$archive" | sha256sum --check --strict
-          tar --extract --gzip --file "$archive" --directory "$tools" --no-same-owner --no-same-permissions
-          printf '%s\n' "$tools/tailscale_${version}_amd64" >> "$GITHUB_PATH"
-      - name: Verify ephemeral OIDC and restricted private transport
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GAME_NETWORK_BINDING: ${{ secrets.GAME_NETWORK_BINDING }}
-          GAME_SSH_PRIVATE_KEY: ${{ secrets.GAME_SSH_PRIVATE_KEY }}
-        run: python3 scripts/game_network.py probe > "$RUNNER_TEMP/game-private-network-result.json"
-      - name: Remove only this run's private daemon and credentials
-        if: always()
-        run: python3 scripts/game_network.py cleanup
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: game-private-preflight-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/game-private-network-result.json
-          if-no-files-found: error
-          overwrite: false
-          retention-days: 14
-
   deploy:
     name: Deploy verified game release
-    if: inputs.operation == 'deploy'
+    if: github.event_name == 'workflow_run' && needs.resolve.outputs.eligible == 'true'
     needs: resolve
     environment: game-production
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: read
       actions: read
       id-token: write
+    env:
+      SOURCE_CI_RUN_ID: ${{ needs.resolve.outputs.ci_run_id }}
+      IMAGE_SOURCE_REVISION: ${{ needs.resolve.outputs.image_source_revision }}
+      EXPECTED_IMAGE_DIGEST: sha256:${{ needs.resolve.outputs.image_sha256 }}
+      PUBLICATION_RUN_ID: ${{ needs.resolve.outputs.publication_run_id }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
-      - name: Recheck source and enabled deployment before private access
+      - name: Recheck automatic main authority before private access
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/game_network.py resolve

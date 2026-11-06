@@ -33,7 +33,7 @@ class UpdaterCLITests(unittest.TestCase):
         (self.root / "gh").rename(self.root / "github-api")
         self.executable("gh", "import os,sys\nfrom pathlib import Path\nr=Path(__file__).parent\np=str(r/'github-api') if sys.argv[1]=='api' else " + repr(str(self.release.root / "gh")) + "\nos.execv(p,[p,*sys.argv[1:]])\n")
         self.executable("curl", "import os,sys\nif sys.argv[-1]=='http://169.254.169.254/hetzner/v1/metadata/instance-id': print('12345')\nelse:\n p=" + repr(str(self.release.root / "curl")) + ";os.execv(p,[p,*sys.argv[1:]])\n")
-        self.executable("systemctl", "import datetime\nprint((datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=1)).strftime('%a %Y-%m-%d %H:%M:%S UTC'))\n")
+        self.executable("systemctl", "import datetime,sys\nprint('inactive' if '--property=ActiveState' in sys.argv else (datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=1)).strftime('%a %Y-%m-%d %H:%M:%S UTC'))\n")
         for name in ["state", "work", "data", "backup-state", "credentials"]:
             (self.root / name).mkdir(mode=0o700)
         self.database = self.root / "data/game.sqlite3"
@@ -101,6 +101,26 @@ class UpdaterCLITests(unittest.TestCase):
         value = json.loads(path.read_text())
         value["fault"] = name
         path.write_text(json.dumps(value))
+
+    def test_automatic_main_release_waits_for_active_backup_then_deploys_same_unconsumed_request(self):
+        self.auth.automatic_mode(publication_run=77)
+        (self.root / "policy.json").unlink()
+        authorization = self.auth.invoke()
+        self.assertEqual(authorization.returncode, 0, authorization.stderr)
+        before = self.describe(self.database)
+        self.executable("systemctl", "import datetime,sys\nprint('active' if '--property=ActiveState' in sys.argv else (datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=1)).strftime('%a %Y-%m-%d %H:%M:%S UTC'))\n")
+        deferred = self.command()
+        self.assertEqual(deferred.returncode, 75, deferred.stderr)
+        self.assertEqual(json.loads(deferred.stdout)["status"], "deployment_deferred")
+        self.assertFalse(list((self.root / "state").glob("attempt-*")))
+        self.assertFalse((self.root / "state/inflight.json").exists())
+        self.assertEqual(self.describe(self.database), before)
+        self.assertEqual(json.loads((self.root / "docker-state.json").read_text())["events"], [])
+        self.executable("systemctl", "import datetime,sys\nprint('inactive' if '--property=ActiveState' in sys.argv else (datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=1)).strftime('%a %Y-%m-%d %H:%M:%S UTC'))\n")
+        result = self.command()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "game_deployed")
+        self.assertEqual(self.describe(self.database), before)
 
     def test_failed_live_health_restores_only_the_captured_previous_container(self):
         self.fault("live-health")
@@ -187,6 +207,26 @@ class UpdaterCLITests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(json.loads(result.stdout)["status"], "deployment_blocked_before_live_change")
         self.assertFalse(any(event[0] in {"create", "start", "stop", "rename"} for event in json.loads(path.read_text())["events"]))
+
+    def test_auto_backup_deferral_is_read_only_and_does_not_consume_the_run(self):
+        self.auth.request["publication_run_id"] = 503
+        self.auth.automatic_mode()
+        policy = self.root / "policy.json"
+        policy.chmod(0o600)
+        policy.write_text(json.dumps(self.auth.policy))
+        policy.chmod(0o400)
+        self.assertEqual(self.auth.invoke().returncode, 0)
+        self.executable("systemctl", "import datetime,sys\nif any('ActiveState' in arg for arg in sys.argv): print('inactive')\nelse: print((datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(minutes=5)).strftime('%a %Y-%m-%d %H:%M:%S UTC'))\n")
+        for _ in range(2):
+            result = self.command()
+            self.assertEqual(result.returncode, 75, result.stderr)
+            receipt = json.loads(result.stdout)
+            self.assertEqual(receipt["status"], "deployment_deferred")
+            self.assertGreater(receipt["retry_after_seconds"], 0)
+            self.assertLessEqual(receipt["retry_after_seconds"], 1500)
+            self.assertFalse((self.root / "state/attempt-501").exists())
+            self.assertFalse((self.root / "state/inflight.json").exists())
+            self.assertEqual(json.loads((self.root / "docker-state.json").read_text())["events"], [])
 
 
 if __name__ == "__main__":

@@ -228,6 +228,12 @@ class ReleaseVerificationCLITests(unittest.TestCase):
                 self.assertIn("release_registry_", result.stderr)
                 self.assertFalse((self.root / "fetched").exists())
 
+    def test_verifies_an_automatic_publisher_with_the_same_genuine_source_and_invocation(self):
+        self.run["event"] = "workflow_run"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["publication_run_id"], 77)
+
 
 if __name__ == "__main__":
     unittest.main()

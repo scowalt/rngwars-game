@@ -2,13 +2,14 @@
 
 The intended end state is one authoritative public development repository with CI and CD owned by
 GitHub Actions. [Marketing releases](marketing-release.md) have a separate protected controller.
-[Game image publication](game-image-publication.md) isolates native builds from reviewed registry
-and signing privileges; its default operation validates without publishing. Enabling a publisher
-still requires its project-specific controller, credential and exact-artifact acceptance. Game
-deployment and public activation remain separate.
+[Automatic game delivery](automatic-game-cd.md) follows protected owner-main merges through CI,
+[isolated signed publication](game-image-publication.md) and the guarded updater. Manual dispatch
+only validates; enabling automation still requires explicit controller, identity and live-acceptance
+cutover. Publication and host mutation remain separate jobs and capabilities.
 
-## Context guard is not a publisher
+## Legacy context guard is not a publisher
 
+This preparation-era contract is not the automatic game's authorization adapter.
 `scripts/release_gate.py` has no network, registry or deployment implementation. It validates an
 explicit policy, GitHub execution context, freshness/completeness metadata and an artifact's actual
 SHA-256. It reports **context validated only; no operation performed**. It does not authenticate
@@ -27,10 +28,10 @@ checks.
 An actual controller must independently verify original evidence identity and integrity, registry
 state, source/native architecture and reviewer/environment authorization. The context guard's tests
 exercise rejection/validation contracts with synthetic evidence; they are not release acceptance.
-The game publication adapter separately checks actual GitHub metadata, native OCI identity, reviewed
-environment history and registry provenance; its synthetic provider tests still require real
-protected publication/readback before operational acceptance. Missing proof remains a blocker, not
-permission to fabricate `passed` values.
+The game publication adapter separately checks actual GitHub metadata, native OCI identity,
+main-push/environment authority and registry provenance; its synthetic provider tests still require
+real protected publication/readback before operational acceptance. Missing proof remains a blocker,
+not permission to fabricate `passed` values.
 
 ## No second routine publisher
 
@@ -43,7 +44,7 @@ real gated execution and provenance readback; a deployment controller remains a 
 Game image publication and deployment are separate authorizations. Keep immutable full-SHA tags and
 full digest identity; no automatic `latest` updater. Selecting a native runner does not prove a
 native image until the resulting manifest/config and actual build execution are verified. An
-intentionally dormant game does not need to be restarted just to move source and CI.
+existing game must not be restarted by source-only validation.
 
 ## Controlled cutover
 
@@ -55,8 +56,9 @@ For marketing, game publishing and game deployment independently:
    private-runner, publishing, hosting, production or backup capabilities.
 3. Verify the old project-specific trigger is fenced before the replacement can act. Do not stop a
    shared CI service or leave two release paths active.
-4. Approve the exact revision/artifact and, for game deployment, the exact digest and current
-   recovery gates. Preserve live data, backup identity and rollback authority.
+4. Establish the exact approval point: marketing retains artifact review; automatic game delivery
+   uses protected-main merge authority and independent exact-image/recovery verification. Preserve
+   live data, backup identity and rollback authority.
 5. Retain private detailed evidence, emit only bounded non-sensitive status, and preserve real
    command exit/failure semantics. Raw provider plans, host details, credentials and databases must
    not become public Actions artifacts.

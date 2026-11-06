@@ -125,11 +125,24 @@ def main():
         (fixture.root / "native-binding.json").write_text(json.dumps(binding))
         (fixture.root / "native-mapping.json").write_text(json.dumps({initial: fixture.policy["initial_image"]}))
         shutil.copyfile(ROOT / "scripts/tests/fixtures/native_updater_docker.py", fixture.root / "docker-body.py")
+        fixture.auth.request["image_digest"] = digest
+        fixture.auth.automatic_mode(publication_run=77, config_digest=manifest["config"]["digest"])
+        (fixture.root / "policy.json").chmod(0o600)
+        (fixture.root / "policy.json").write_text(json.dumps(fixture.auth.policy))
+        (fixture.root / "policy.json").chmod(0o400)
         api_tool = fixture.root / "github-api"
-        api_tool.write_text(api_tool.read_text().replace("route=='/actions/artifacts/504/zip'", "route.startswith('/actions/artifacts/') and route.endswith('/zip')"))
+        api_tool.write_text(api_tool.read_text().replace("route=='/actions/artifacts/504/zip'", "route.startswith('/actions/artifacts/') and route.endswith('/zip') and route!='/actions/artifacts/505/zip'"))
         def stage(run_id):
             request = {**fixture.auth.request, "run_id": run_id, "image_digest": digest}
-            responses = json.loads(json.dumps(fixture.auth.api).replace("501", str(run_id)))
+            responses = json.loads(json.dumps(fixture.auth.api))
+            for key in list(responses):
+                if key.startswith("/actions/runs/501"):
+                    value = responses.pop(key)
+                    if key == "/actions/runs/501":
+                        value["id"] = run_id
+                    for job in value.get("jobs", []) if isinstance(value, dict) else []:
+                        job["run_id"] = run_id
+                    responses[key.replace("/actions/runs/501", f"/actions/runs/{run_id}", 1)] = value
             raw = io.BytesIO()
             with zipfile.ZipFile(raw, "w") as archive:
                 entry = zipfile.ZipInfo("request.json")
@@ -137,7 +150,9 @@ def main():
                 archive.writestr(entry, json.dumps(request))
             content = raw.getvalue()
             (fixture.root / "artifact.zip").write_bytes(content)
-            artifact = json.loads(json.dumps(fixture.auth.artifact).replace("501", str(run_id)))
+            artifact = json.loads(json.dumps(fixture.auth.artifact))
+            artifact["workflow_run"]["id"] = run_id
+            artifact["name"] = f"game-deployment-request-{run_id}-1"
             artifact.update(id=run_id + 3, digest="sha256:" + hashlib.sha256(content).hexdigest(), size_in_bytes=len(content))
             responses[f"/actions/runs/{run_id}/artifacts?per_page=100"] = {"total_count": 1, "artifacts": [artifact]}
             (fixture.root / "responses.json").write_text(json.dumps(responses))
@@ -170,6 +185,12 @@ def main():
                         (Path(os.environ["RUNNER_TEMP"]) / "native-updater-diagnostic.json").write_text(json.dumps(report, indent=2))
                         return client.returncode, output, diagnostic
         before = json.loads(run([*user, "/usr/bin/python3", str(helpers / "game_recovery.py"), "inspect", str(database)]))
+        fixture.executable("systemctl", "import datetime,sys\nprint('active' if '--property=ActiveState' in sys.argv else (datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=1)).strftime('%a %Y-%m-%d %H:%M:%S UTC'))\n")
+        code, output, error = invoke(stage(501))
+        assert code == 75 and json.loads(output)["status"] == "deployment_deferred", "native_deferral_failed"
+        assert not (fixture.root / "state/attempt-501").exists() and not (fixture.root / "state/inflight.json").exists()
+        assert before == json.loads(run([*user, "/usr/bin/python3", str(helpers / "game_recovery.py"), "inspect", str(database)]))
+        fixture.executable("systemctl", "import datetime,sys\nprint('inactive' if '--property=ActiveState' in sys.argv else (datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=1)).strftime('%a %Y-%m-%d %H:%M:%S UTC'))\n")
         code, output, error = invoke(stage(501))
         assert code == 0 and json.loads(output)["status"] == "game_deployed", "native_update_failed"
         after = json.loads(run([*user, "/usr/bin/python3", str(helpers / "game_recovery.py"), "inspect", str(database)]))
@@ -187,7 +208,7 @@ def main():
         assert code != 0 and json.loads(output)["status"] == "game_rolled_back", "native_rollback_failed"
         assert json.loads((fixture.root / "state/current.json").read_text()) == current
         assert json.loads(run([*user, "/usr/bin/python3", str(helpers / "game_recovery.py"), "inspect", str(database)]))["content"] == before_rollback["content"]
-        result = {"native_container_update": True, "native_captured_container_rollback": True, "real_encrypted_local_restore": True, "database_identity_and_content_preserved": True, "authenticated_profile_survived_update": True, "real_private_socket_peer_checked": True, "SSH_adapter_kept_unprivileged": True, "sandboxed_database_identity_drop_verified": True, "provider_and_registry_transports_are_synthetic": True, "live_authority_or_release_cryptography_not_claimed": True}
+        result = {"automatic_policy_contract_exercised": True, "backup_deferral_did_not_consume_attempt": True, "native_container_update": True, "native_captured_container_rollback": True, "real_encrypted_local_restore": True, "database_identity_and_content_preserved": True, "authenticated_profile_survived_update": True, "real_private_socket_peer_checked": True, "SSH_adapter_kept_unprivileged": True, "sandboxed_database_identity_drop_verified": True, "provider_and_registry_transports_are_synthetic": True, "live_authority_or_release_cryptography_not_claimed": True}
         destination = Path(os.environ["RUNNER_TEMP"]) / "native-updater-result.json"
         destination.write_text(json.dumps(result, indent=2))
         destination.chmod(0o644)

@@ -114,7 +114,7 @@ class ReleaseGateTests(unittest.TestCase):
             (area / "evidence.json").unlink()
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
 
-    def test_only_reviewed_game_job_can_publish_and_legacy_alternatives_stay_absent(self):
+    def test_only_main_authorized_game_job_can_publish_and_legacy_alternatives_stay_absent(self):
         self.assertFalse((ROOT / "scripts/manual-release.py").exists())
         self.assertFalse((ROOT / ".github/workflows/deploy-production.yml").exists())
         publishers = set()
@@ -125,7 +125,10 @@ class ReleaseGateTests(unittest.TestCase):
                 if job.get("permissions", {}).get("packages") == "write":
                     publishers.add((path.name, name))
                     self.assertEqual(job["environment"], "game-publication")
-                    self.assertEqual(job["if"], "inputs.operation == 'publish'")
+                    self.assertIn("github.event_name == 'workflow_run'", job["if"])
+                    self.assertIn("needs.prepare.outputs.eligible == 'true'", job["if"])
+                    self.assertIn("workflow_run.event == 'push'", workflow["jobs"]["resolve"]["if"])
+                    self.assertIn("GAME_AUTOMATIC_CD_ENABLED", workflow["jobs"]["resolve"]["if"])
         self.assertEqual(publishers, {("game-publication.yml", "publish")})
 
 

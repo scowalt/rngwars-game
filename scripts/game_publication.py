@@ -15,6 +15,7 @@ import urllib.parse
 import zipfile
 
 import game_artifact
+import game_automation
 
 import marketing_artifact as metadata
 from marketing_artifact import Blocked, require
@@ -29,7 +30,7 @@ OPERATION_STAGE = "resolve"
 
 def context(env):
     require(env.get("GITHUB_ACTIONS") == "true" and env.get("GITHUB_REPOSITORY") == REPOSITORY and env.get("GITHUB_REPOSITORY_ID") == "1442331254" and env.get("GITHUB_REPOSITORY_OWNER_ID") == "1100550", "game_publication_repository")
-    require(env.get("GITHUB_REF") == "refs/heads/main" and env.get("GITHUB_WORKFLOW_REF") == WORKFLOW and env.get("GITHUB_EVENT_NAME") == "workflow_dispatch" and env.get("GITHUB_RUN_ATTEMPT") == "1", "game_publication_context")
+    require(env.get("GITHUB_REF") == "refs/heads/main" and env.get("GITHUB_WORKFLOW_REF") == WORKFLOW and env.get("GITHUB_EVENT_NAME") in {"workflow_dispatch", "workflow_run"} and env.get("GITHUB_RUN_ATTEMPT") == "1", "game_publication_context")
     require(env.get("GITHUB_ACTOR") == env.get("GITHUB_TRIGGERING_ACTOR") == "scowalt" and env.get("GITHUB_ACTOR_ID") == "1100550", "game_publication_actor")
     revision = env.get("GITHUB_SHA", "")
     require(re.fullmatch(r"[a-f0-9]{40}", revision) and env.get("GITHUB_WORKFLOW_SHA") == env.get("APPROVED_REVISION") == revision, "game_publication_revision")
@@ -41,6 +42,9 @@ def resolve(env):
     if env.get("GAME_PUBLICATION_OPERATION") == "publish":
         publication_configuration(env)
     identity = metadata.resolve_ci(ci_run, revision)
+    if env.get("GITHUB_EVENT_NAME") == "workflow_run":
+        require(env.get("GAME_AUTOMATIC_CD_ENABLED") == "true", "automatic_game_disabled")
+        game_automation.push_ci(ci_run, revision, api=metadata.github)
     source_run = metadata.github(f"/actions/runs/{ci_run}")
     created = datetime.datetime.fromisoformat(source_run["created_at"])
     require(created.tzinfo is not None and -300 <= (datetime.datetime.now(datetime.timezone.utc) - created).total_seconds() <= 86400, "game_CI_freshness")
@@ -49,7 +53,7 @@ def resolve(env):
     run = metadata.github(f"/actions/runs/{run_id}")
     require(workflow["state"] == "active" and workflow["path"] == run["path"] == ".github/workflows/game-publication.yml" and run["workflow_id"] == workflow["id"] and run["id"] == run_id, "game_publication_workflow")
     require(run["repository"]["id"] == run["head_repository"]["id"] == 1442331254 and run["head_sha"] == revision and run["head_branch"] == "main" and run["actor"]["id"] == run["triggering_actor"]["id"] == 1100550, "game_publication_run_identity")
-    require(run["event"] == "workflow_dispatch" and type(run["run_attempt"]) is int and run["run_attempt"] == 1 and run["status"] == "in_progress", "game_publication_run_state")
+    require(run["event"] == env["GITHUB_EVENT_NAME"] and type(run["run_attempt"]) is int and run["run_attempt"] == 1 and run["status"] == "in_progress", "game_publication_run_state")
     return {"status": "game_source_resolved_no_publication", **identity, "publication_run_id": run_id}
 
 
@@ -104,7 +108,10 @@ def publication_configuration(env):
     environment = metadata.github("/environments/game-publication")
     require(environment["name"] == "game-publication" and environment["can_admins_bypass"] is False and environment["deployment_branch_policy"] == {"protected_branches": False, "custom_branch_policies": True}, "game_publication_environment")
     reviewers = [rule for rule in environment["protection_rules"] if rule["type"] == "required_reviewers"]
-    require(len(reviewers) == 1 and reviewers[0]["prevent_self_review"] is False and [(r["type"], r["reviewer"]["id"]) for r in reviewers[0]["reviewers"]] == [("User", 1100550)], "game_publication_review_policy")
+    if env.get("GITHUB_EVENT_NAME") == "workflow_run":
+        require(env.get("GAME_AUTOMATIC_CD_ENABLED") == "true" and not reviewers, "automatic_publication_environment")
+    else:
+        require(len(reviewers) == 1 and reviewers[0]["prevent_self_review"] is False and [(r["type"], r["reviewer"]["id"]) for r in reviewers[0]["reviewers"]] == [("User", 1100550)], "game_publication_review_policy")
     branches = metadata.github("/environments/game-publication/deployment-branch-policies")
     require(branches["total_count"] == len(branches["branch_policies"]) == 1 and [(b["name"], b["type"]) for b in branches["branch_policies"]] == [("main", "branch")], "game_publication_branch_policy")
     return environment
@@ -113,9 +120,12 @@ def publication_configuration(env):
 def publication_authority(info, env):
     require(env.get("GAME_PUBLICATION_OPERATION") == "publish" and env.get("EXPECTED_IMAGE_DIGEST") == info["image_digest"] and env.get("EXPECTED_ARCHIVE_SHA256") == info["archive_sha256"], "game_publication_not_approved")
     environment = publication_configuration(env)
-    reviews = metadata.github(f"/actions/runs/{info['publication_run_id']}/approvals")
-    selected = [review for review in reviews if any(item["id"] == environment["id"] and item["name"] == "game-publication" for item in review["environments"])]
-    require(len(selected) == 1 and selected[0]["state"] == "approved" and selected[0]["user"]["id"] == 1100550, "game_publication_review_missing")
+    if env.get("GITHUB_EVENT_NAME") == "workflow_run":
+        game_automation.push_ci(info["ci_run_id"], info["source_revision"], api=metadata.github)
+    else:
+        reviews = metadata.github(f"/actions/runs/{info['publication_run_id']}/approvals")
+        selected = [review for review in reviews if any(item["id"] == environment["id"] and item["name"] == "game-publication" for item in review["environments"])]
+        require(len(selected) == 1 and selected[0]["state"] == "approved" and selected[0]["user"]["id"] == 1100550, "game_publication_review_missing")
 
 
 def reserve(info):
@@ -250,7 +260,23 @@ def main():
         receiving.add_argument("destination")
         receiving.add_argument("--artifact-id", required=True)
     args = parser.parse_args()
-    info = resolve(os.environ)
+    if os.environ.get("GITHUB_EVENT_NAME") == "workflow_run" and args.command != "verify-published":
+        revision, run_id, ci_run = context(os.environ)
+        require(os.environ.get("GAME_AUTOMATIC_CD_ENABLED") == "true", "automatic_game_disabled")
+        ci = metadata.github(f"/actions/runs/{ci_run}")
+        if ci["head_sha"] != revision or metadata.github("/git/ref/heads/main")["object"]["sha"] != revision:
+            if os.environ.get("GITHUB_OUTPUT"):
+                output({"eligible": "false"})
+            print(json.dumps({"status": "automatic_source_superseded", "source_revision": revision}))
+            return
+    if args.command == "verify-published" and os.environ.get("GITHUB_EVENT_NAME") == "workflow_run":
+        revision, run_id, ci_run = context(os.environ)
+        game_automation.push_ci(ci_run, revision, api=metadata.github, current=False)
+        run = metadata.github(f"/actions/runs/{run_id}")
+        require(run["id"] == run_id and run["head_sha"] == revision and run["event"] == "workflow_run" and run["status"] == "in_progress" and run["run_attempt"] == 1 and run["actor"]["id"] == run["triggering_actor"]["id"] == 1100550 and run["repository"]["id"] == run["head_repository"]["id"] == 1442331254 and run["path"] == ".github/workflows/game-publication.yml", "automatic_finalization_context")
+        info = {"repository": REPOSITORY, "repository_id": 1442331254, "source_revision": revision, "source_branch": "main", "ci_run_id": ci_run, "workflow_revision": revision, "publication_run_id": run_id}
+    else:
+        info = resolve(os.environ)
     if args.command in {"prepare", "publish"}:
         OPERATION_STAGE = "candidate"
         info = prepare(info, identifier(args.artifact_id), args.destination)
@@ -261,7 +287,7 @@ def main():
         info = verify_published(info, args.receipt, os.environ)
     OPERATION_STAGE = "outputs"
     if os.environ.get("GITHUB_OUTPUT"):
-        values = {"source_revision": info["source_revision"]}
+        values = {"source_revision": info["source_revision"], "eligible": "true"}
         if args.command in {"prepare", "publish"}:
             values.update(image_sha256=info["image_digest"].removeprefix("sha256:"), config_sha256=info["config_digest"].removeprefix("sha256:"), archive_sha256=info["archive_sha256"])
         output(values)

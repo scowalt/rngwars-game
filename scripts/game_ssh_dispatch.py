@@ -49,12 +49,16 @@ def main():
                 if len(content) > 8192:
                     raise ValueError()
         reply = json.loads(content, object_pairs_hook=game_ssh_probe.unique)
-        if type(reply) is not dict or set(reply) != {"status", "run_id", "controller_revision", "image_digest", "source_revision", "publication_run_id"} or reply["run_id"] != request["run_id"] or reply["status"] not in {"game_deployed", "game_rolled_back", "deployment_blocked_before_live_change", "operator_recovery_required"}:
+        deferred = type(reply) is dict and reply.get("status") == "deployment_deferred"
+        fields = {"status", "run_id", "controller_revision", "image_digest", "source_revision", "publication_run_id"} | ({"retry_after_seconds"} if deferred else set())
+        if type(reply) is not dict or set(reply) != fields or reply["run_id"] != request["run_id"] or reply["status"] not in {"game_deployed", "game_rolled_back", "deployment_blocked_before_live_change", "operator_recovery_required", "deployment_deferred"}:
             raise ValueError()
         if not all(type(reply[k]) is str and re.fullmatch(r"[a-f0-9]{40}", reply[k]) for k in ["controller_revision", "source_revision"]) or type(reply["image_digest"]) is not str or not re.fullmatch(r"sha256:[a-f0-9]{64}", reply["image_digest"]) or type(reply["publication_run_id"]) is not int or not 0 < reply["publication_run_id"] < 10 ** 20:
             raise ValueError()
+        if deferred and (type(reply["retry_after_seconds"]) is not int or not 1 <= reply["retry_after_seconds"] <= 1500):
+            raise ValueError()
         print(json.dumps(reply, sort_keys=True))
-        return 0 if reply["status"] == "game_deployed" else 1
+        return 75 if deferred else 0 if reply["status"] == "game_deployed" else 1
     except Exception:
         print("Restricted game command rejected or outcome unconfirmed", file=sys.stderr)
         return 64

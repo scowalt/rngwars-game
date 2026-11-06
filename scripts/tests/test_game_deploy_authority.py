@@ -45,7 +45,7 @@ class DeploymentAuthorityCLITests(unittest.TestCase):
         }
         self.artifact = {"id": 504, "name": "game-deployment-request-501-1", "expired": False, "created_at": now, "updated_at": now, "workflow_run": {"id": 501, "repository_id": 1442331254, "head_repository_id": 1442331254, "head_sha": REVISION, "head_branch": "main"}}
         executable = self.root / "gh"
-        executable.write_text("#!" + sys.executable + "\nimport json,os,sys\nfrom pathlib import Path\nr=Path(__file__).parent\nassert os.environ['GH_TOKEN']=='" + TOKEN + "'\nassert not any(k in os.environ for k in ['GITHUB_TOKEN','AWS_SECRET_ACCESS_KEY'])\nassert os.environ['HOME']==os.environ['GH_CONFIG_DIR'] and os.environ['HOME']!=str(r)\nassert sys.argv[1:7]==['api','--hostname','github.com','--method','GET','repos/scowalt/rngwars-game'+sys.argv[-1].removeprefix('repos/scowalt/rngwars-game')]\nroute=sys.argv[-1].removeprefix('repos/scowalt/rngwars-game')\nif (r/'fail').exists():\n print('private-provider-diagnostic '+os.environ['GH_TOKEN'],file=sys.stderr); raise SystemExit(1)\nif route=='/actions/artifacts/504/zip': sys.stdout.buffer.write((r/'artifact.zip').read_bytes())\nelse:\n value=json.loads((r/'responses.json').read_text())[route]\n if route=='/actions/runs/502': (r/'CI-observed').touch()\n if route=='/actions/runs/501' and (r/'cancel-after-ci').exists() and (r/'CI-observed').exists(): value.update(status='completed',conclusion='cancelled')\n print(json.dumps(value))\n")
+        executable.write_text("#!" + sys.executable + "\nimport json,os,sys\nfrom pathlib import Path\nr=Path(__file__).parent\nassert os.environ['GH_TOKEN']=='" + TOKEN + "'\nassert not any(k in os.environ for k in ['GITHUB_TOKEN','AWS_SECRET_ACCESS_KEY'])\nassert os.environ['HOME']==os.environ['GH_CONFIG_DIR'] and os.environ['HOME']!=str(r)\nassert sys.argv[1:7]==['api','--hostname','github.com','--method','GET','repos/scowalt/rngwars-game'+sys.argv[-1].removeprefix('repos/scowalt/rngwars-game')]\nroute=sys.argv[-1].removeprefix('repos/scowalt/rngwars-game')\nif (r/'fail').exists():\n print('private-provider-diagnostic '+os.environ['GH_TOKEN'],file=sys.stderr); raise SystemExit(1)\nif route=='/actions/artifacts/504/zip': sys.stdout.buffer.write((r/'artifact.zip').read_bytes())\nelif route=='/actions/artifacts/505/zip': sys.stdout.buffer.write((r/'publication.zip').read_bytes())\nelse:\n value=json.loads((r/'responses.json').read_text())[route]\n if route=='/actions/runs/502': (r/'CI-observed').touch()\n if route=='/actions/runs/501' and (r/'cancel-after-ci').exists() and (r/'CI-observed').exists(): value.update(status='completed',conclusion='cancelled')\n print(json.dumps(value))\n")
         executable.chmod(0o700)
         self.environment = {"PATH": str(self.root) + os.pathsep + os.environ["PATH"], "HOME": str(self.root), "GH_TOKEN": "wrong-ambient-token", "GITHUB_TOKEN": "unrelated-token", "AWS_SECRET_ACCESS_KEY": "unrelated-backup-key"}
 
@@ -234,6 +234,60 @@ class DeploymentAuthorityCLITests(unittest.TestCase):
                 result = self.invoke(artifact_change={field: "2999-01-01T00:00:00Z"})
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("request_artifact_timing", result.stderr)
+
+    def automatic_mode(self, publication_run=503, config_digest=None):
+        self.policy = {key: value for key, value in self.policy.items() if key != "scripts_tree"}
+        self.policy["version"] = 2
+        self.api["/actions/runs/501"]["event"] = "workflow_run"
+        self.api["/environments/game-production"]["protection_rules"] = []
+        self.api["/actions/runs/501/approvals"] = []
+        inventory = self.api["/actions/runs/501/attempts/1/jobs?per_page=100"]
+        inventory["jobs"].pop(1)
+        inventory["total_count"] = 2
+        self.request["image_source_revision"] = REVISION
+        self.request["publication_run_id"] = publication_run
+        self.api["/actions/workflows/game-publication.yml"] = {"id": 555, "path": ".github/workflows/game-publication.yml", "state": "active"}
+        self.api[f"/actions/runs/{publication_run}"] = {**self.api["/actions/runs/501"], "id": publication_run, "workflow_id": 555, "path": ".github/workflows/game-publication.yml", "status": "completed", "conclusion": "success"}
+        self.api[f"/actions/runs/{publication_run}/attempts/1/jobs?per_page=100"] = {"total_count": 4, "jobs": [{"name": name, "run_id": publication_run, "status": "completed", "conclusion": "success", "labels": ["ubuntu-24.04-arm" if name == "Build and exercise native image" else "ubuntu-24.04"]} for name in ["resolve", "Build and exercise native image", "prepare", "publish"]]}
+        receipt = {"status": "game_image_publication_verified", "repository": "scowalt/rngwars-game", "repository_id": 1442331254, "source_revision": REVISION, "source_branch": "main", "workflow_revision": REVISION, "revision": REVISION, "ci_run_id": 502, "publication_run_id": publication_run, "platform": "linux/arm64", "image_repository": "ghcr.io/scowalt/rngwars-game-releases", "image_digest": self.request["image_digest"], "config_digest": config_digest or "sha256:" + "c" * 64, "native_receipt_consistent": True, "attempt_tag": "release-attempt/game-publication/" + REVISION, "ruleset_verification": "effective_never"}
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w") as archive:
+            entry = zipfile.ZipInfo("game-publication-verified.json")
+            entry.external_attr = (stat.S_IFREG | 0o600) << 16
+            archive.writestr(entry, json.dumps(receipt))
+        raw = stream.getvalue()
+        (self.root / "publication.zip").write_bytes(raw)
+        self.api[f"/actions/runs/{publication_run}/artifacts?per_page=100"] = {"total_count": 1, "artifacts": [{"id": 505, "name": f"game-publication-{publication_run}-1", "expired": False, "size_in_bytes": len(raw), "digest": "sha256:" + hashlib.sha256(raw).hexdigest(), "workflow_run": {"id": publication_run, "repository_id": 1442331254, "head_repository_id": 1442331254, "head_sha": REVISION, "head_branch": "main"}}]}
+
+    def test_v2_auto_authority_requires_real_main_push_and_publication_chain_not_human_release_review(self):
+        self.automatic_mode()
+        self.api["/git/trees/" + REVISION]["tree"][0]["sha"] = "9" * 40
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "automatic_deployment_request_verified_no_execution")
+        self.assertNotIn(TOKEN, result.stdout + result.stderr)
+
+    def test_automatic_authority_rejects_broken_chain_and_unmerged_or_mismatched_sources(self):
+        self.automatic_mode()
+        original = json.dumps(self.api)
+        request = dict(self.request)
+        for case in ["manual-deploy", "manual-publisher", "failed-publisher", "fork", "PR-CI", "outsider-CI", "wrong-image", "old-image-source", "changed-workflow", "review-gate"]:
+            with self.subTest(case=case):
+                self.api = json.loads(original)
+                self.request = dict(request)
+                if case == "manual-deploy": self.api["/actions/runs/501"]["event"] = "workflow_dispatch"
+                elif case == "manual-publisher": self.api["/actions/runs/503"]["event"] = "workflow_dispatch"
+                elif case == "failed-publisher": self.api["/actions/runs/503"]["conclusion"] = "failure"
+                elif case == "fork": self.api["/actions/runs/503"]["head_repository"]["id"] = 9
+                elif case == "PR-CI": self.api["/actions/runs/502"]["event"] = "pull_request"
+                elif case == "outsider-CI": self.api["/actions/runs/502"]["actor"]["id"] = 9
+                elif case == "wrong-image": self.request["image_digest"] = "sha256:" + "9" * 64
+                elif case == "old-image-source": self.request["image_source_revision"] = "9" * 40
+                elif case == "changed-workflow": self.api["/contents/.github/workflows/game-deployment.yml?ref=" + REVISION]["sha"] = "9" * 40
+                else: self.api["/environments/game-production"]["protection_rules"] = [{"type": "required_reviewers"}]
+                result = self.invoke()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Game deployment request blocked:", result.stderr)
 
 
 if __name__ == "__main__":

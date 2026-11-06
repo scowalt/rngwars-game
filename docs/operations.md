@@ -9,8 +9,9 @@ verification and a restricted read-only SSH transport probe. Neither is a mutati
 controller or permission to start the game. The separate
 [guarded updater](game-deployment-controller.md) adds independently authorized container
 replacement, encrypted recovery, durable attempts and captured rollback. It requires reviewed host
-installation and explicit protected-workflow activation; merging its source does not enable
-deployment.
+installation and explicit activation of [automatic protected-main delivery](automatic-game-cd.md).
+Merging installation code alone does not install a controller or enable automation. After that
+coordinated cutover, ordinary eligible main pushes deploy without a second release approval.
 
 ## Fresh database initialization
 
