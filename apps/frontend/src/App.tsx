@@ -50,6 +50,12 @@ function setupSignalREvents() {
   signalr.on("onMatchCancelled", (data) => {
     gameStore.setCancelled(data.error.message);
   });
+
+  signalr.on("onReconnected", () => {
+    if (gameStore.state.phase === "queuing") {
+      signalr.joinQueue().catch(console.error);
+    }
+  });
 }
 
 const App: Component = () => {

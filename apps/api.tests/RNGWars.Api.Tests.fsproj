@@ -10,6 +10,8 @@
     <Compile Include="DatabaseTests.fs" />
     <Compile Include="InitializationTests.fs" />
     <Compile Include="EloTests.fs" />
+    <Compile Include="MatchAgentTests.fs" />
+    <Compile Include="MatchmakingQueueTests.fs" />
     <Compile Include="ApiHttpFixture.fs" />
     <Compile Include="ApiHttpTests.fs" />
   </ItemGroup>

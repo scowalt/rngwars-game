@@ -47,6 +47,8 @@ type GameHub() =
 
     override this.OnDisconnectedAsync(_exception) =
         task {
+            MatchmakingQueue.removeConnection this.Context.ConnectionId
+
             match ConnectionTracker.untrack this.Context.ConnectionId with
             | Some _userId -> ()
             | None -> ()

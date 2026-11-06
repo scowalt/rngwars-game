@@ -23,7 +23,7 @@ const { apiMock, signalrMock } = vi.hoisted(() => ({
   },
   signalrMock: {
     connect: vi.fn().mockResolvedValue(undefined),
-    joinMatch: vi.fn(),
+    joinMatch: vi.fn().mockResolvedValue(undefined),
     joinQueue: vi.fn(),
     on: vi.fn(),
   },
@@ -33,6 +33,25 @@ vi.mock("./services/api", () => ({ api: apiMock }));
 vi.mock("./services/signalr", () => ({ signalr: signalrMock }));
 
 import App from "./App";
+import { gameStore } from "./stores/gameStore";
+
+function emit(event: string, data?: unknown) {
+  for (const [name, handler] of signalrMock.on.mock.calls) {
+    if (name === event) handler(data);
+  }
+}
+
+async function clickMultiplayer(root: HTMLElement) {
+  const button = await vi.waitFor(() => {
+    emit("onConnected");
+    const found = [...root.querySelectorAll("button")].find(
+      (b) => b.textContent === "Multiplayer" && !b.disabled
+    );
+    expect(found).toBeDefined();
+    return found!;
+  });
+  button.click();
+}
 
 describe("application startup", () => {
   let dispose: (() => void) | undefined;
@@ -42,6 +61,7 @@ describe("application startup", () => {
     dispose = undefined;
     localStorage.clear();
     document.body.replaceChildren();
+    gameStore.reset();
     vi.clearAllMocks();
   });
 
@@ -77,5 +97,58 @@ describe("application startup", () => {
     expect(onUnhandledRejection).not.toHaveBeenCalled();
 
     window.removeEventListener("unhandledrejection", onUnhandledRejection);
+  });
+
+  test("redirects to the lobby when opening matchmaking without an active queue", async () => {
+    window.history.replaceState({}, "", "/matchmaking");
+    const root = document.createElement("div");
+    document.body.append(root);
+
+    dispose = render(() => <App />, root);
+
+    await vi.waitFor(() => {
+      expect(window.location.pathname).toBe("/");
+      expect(root.textContent).toContain("Multiplayer");
+    });
+    expect(root.textContent).not.toContain("Finding Opponent...");
+  });
+
+  test("waits in matchmaking after queuing from the lobby until a match is found", async () => {
+    signalrMock.joinQueue.mockResolvedValueOnce(undefined);
+    window.history.replaceState({}, "", "/");
+    const root = document.createElement("div");
+    document.body.append(root);
+
+    dispose = render(() => <App />, root);
+    await clickMultiplayer(root);
+
+    await vi.waitFor(() => {
+      expect(window.location.pathname).toBe("/matchmaking");
+      expect(root.textContent).toContain("Finding Opponent...");
+    });
+
+    emit("onMatchFound", { matchId: "match-1", opponentName: "Rival" });
+
+    await vi.waitFor(() => {
+      expect(window.location.pathname).toBe("/game/match-1");
+    });
+    expect(signalrMock.joinMatch).toHaveBeenCalledWith("match-1");
+  });
+
+  test("joins the match when it is found before reaching matchmaking", async () => {
+    signalrMock.joinQueue.mockImplementationOnce(async () => {
+      emit("onMatchFound", { matchId: "match-2", opponentName: "Rival" });
+    });
+    window.history.replaceState({}, "", "/");
+    const root = document.createElement("div");
+    document.body.append(root);
+
+    dispose = render(() => <App />, root);
+    await clickMultiplayer(root);
+
+    await vi.waitFor(() => {
+      expect(window.location.pathname).toBe("/game/match-2");
+    });
+    expect(signalrMock.joinMatch).toHaveBeenCalledWith("match-2");
   });
 });
