@@ -20,6 +20,7 @@ export type SignalREvents = {
   onMatchCompleted: (data: MatchCompleted) => void;
   onMatchCancelled: (data: MatchCancelled) => void;
   onConnected: () => void;
+  onReconnected: () => void;
   onDisconnected: () => void;
 };
 
@@ -72,6 +73,7 @@ class SignalRService {
 
     this.connection.onreconnected(() => {
       this.events.onConnected?.();
+      this.events.onReconnected?.();
     });
 
     this.connection.onclose(() => {

@@ -14,6 +14,12 @@ const Matchmaking: Component = () => {
     }
   });
 
+  createEffect(() => {
+    if (gameStore.state.phase !== "queuing" && !gameStore.state.matchId) {
+      navigate("/");
+    }
+  });
+
   async function leaveQueue() {
     try {
       await signalr.leaveQueue();
