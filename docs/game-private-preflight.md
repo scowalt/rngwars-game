@@ -94,21 +94,23 @@ replaced. `NoNewPrivileges=yes` intentionally prevents privilege escalation from
 the unit/configuration before installation, then verify actual key, forced-command, forwarding, PTY
 and subsystem behavior without modifying production data.
 
-## Protected read-only workflow
+## Read-only verification and automatic private delivery
 
-`.github/workflows/game-deployment.yml` keeps read-only verification separate from the explicitly
-enabled, owner-reviewed `deploy` operation described in
-[the updater guide](game-deployment-controller.md). Manual dispatch still defaults to
-`verify-release`; it validates exact current main CI and fetches/verifies the selected published
-image without private capability. `private-preflight` never invokes the mutating host command.
+`.github/workflows/game-deployment.yml` keeps manual `verify-release` separate from
+[automatic delivery](automatic-game-cd.md). Manual verification checks main CI and the selected
+published image without private capability. The automatic deployment job performs the same read-only
+transport probe before invoking the separate guarded update command.
 
-The optional `private-preflight` job additionally requires:
+Automatic private execution requires:
 
-- `GAME_PRIVATE_PREFLIGHT_ENABLED=true` injected from repository configuration, not dispatch inputs.
-- The pre-existing main-only, owner-reviewed `game-production` environment with no admin bypass.
-- An actual owner approval for this first-attempt dispatch and a GitHub-hosted job.
-- Two environment-scoped secrets: `GAME_NETWORK_BINDING` and `GAME_SSH_PRIVATE_KEY`. Never use a
-  personal administrator key, historical package credential or long-lived Tailscale secret.
+- Trusted `GAME_AUTOMATIC_CD_ENABLED=true` and `GAME_DEPLOYMENT_ENABLED=true` variables.
+- The pre-existing main-only `game-production` environment, no admin bypass and no per-release
+  reviewer gate; protected-main merge authority replaces that gate.
+- Independently verified owner main-push CI and successful automatic publication, first attempts and
+  a GitHub-hosted deployment job.
+- The same two environment-scoped secrets: `GAME_NETWORK_BINDING` and `GAME_SSH_PRIVATE_KEY`. Never
+  use a personal administrator key, historical package credential or long-lived Tailscale secret.
+  The exact trust event becomes `workflow_run`; other identity restrictions stay intact.
 
 The private binding is a bounded JSON object with these exact fields:
 
@@ -126,11 +128,12 @@ These are private operational bindings even where individual identifiers are non
 secret contains the dedicated restricted OpenSSH private key. Install both through secure stdin,
 never command arguments, source, public artifacts or chat.
 
-`scripts/game_network.py` rechecks GitHub context, fresh CI, environment/review and runner metadata
-before staging credentials. It runs a checksum-pinned native Tailscale client in userspace mode with
-memory-only ephemeral state, automatic GitHub OIDC discovery, one exact CI tag, incoming connections
-blocked, and DNS/routes unchanged. SSH uses a private socket proxy, a pinned host key, the dedicated
-key only, no agent and no forwarding. The server must return the exact fresh challenge.
+`scripts/game_network.py` rechecks GitHub context, fresh CI, automatic lineage, environment and
+runner metadata before staging credentials. It runs a checksum-pinned native Tailscale client in
+userspace mode with memory-only ephemeral state, automatic GitHub OIDC discovery, one exact CI tag,
+incoming connections blocked, and DNS/routes unchanged. SSH uses a private socket proxy, a pinned
+host key, the dedicated key only, no agent and no forwarding. The server must return the exact fresh
+challenge.
 
 After the positive SSH check, three negative connection checks must not connect: the target's
 ordinary SSH and HTTPS ports and the independent denied endpoint's SSH port. A timeout alone does

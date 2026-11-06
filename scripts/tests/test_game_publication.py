@@ -295,6 +295,72 @@ class PublicationCLITests(unittest.TestCase):
         self.assertEqual(value["ci_run_id"], 42)
         self.assertEqual(value["publication_run_id"], 77)
 
+    def automatic_publication(self):
+        self.publication_capability()
+        self.env.update(GITHUB_EVENT_NAME="workflow_run", GAME_AUTOMATIC_CD_ENABLED="true")
+        self.responses["/actions/runs/77"]["event"] = "workflow_run"
+        self.responses["/actions/runs/42"].update(actor={"id": 1100550}, triggering_actor={"id": 1100550})
+        for job in self.responses["/actions/runs/42/attempts/1/jobs?per_page=100"]["jobs"]:
+            job.update(run_id=42, labels=["ubuntu-latest"])
+        self.responses["/environments/game-publication"]["protection_rules"] = []
+        self.responses["/actions/runs/77/approvals"] = []
+
+    def test_automatic_publication_uses_owner_main_push_CI_without_a_release_review(self):
+        self.automatic_publication()
+        result = self.invoke("publish", str(self.root / "automatic-candidate"), "--artifact-id", "99")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "image_published_not_yet_attested")
+        self.assertTrue((self.root / "pushed").exists())
+        self.assertNotIn("synthetic-github-package-token", result.stdout + result.stderr)
+
+    def test_auto_failures_cannot_reserve_or_publish_before_all_main_push_gates(self):
+        for case in ["disabled", "PR", "outsider", "fork", "failed-CI", "reviewer-gate-not-cut-over"]:
+            with self.subTest(case=case):
+                self.automatic_publication()
+                self.env["DOCKER_CONFIG"] = str(self.root / ("auto-auth-" + case))
+                if case == "disabled": self.env["GAME_AUTOMATIC_CD_ENABLED"] = "false"
+                elif case == "PR": self.responses["/actions/runs/42"]["event"] = "pull_request"
+                elif case == "outsider": self.responses["/actions/runs/42"]["actor"]["id"] = 9
+                elif case == "fork": self.responses["/actions/runs/42"]["head_repository"] = {"id": 9}
+                elif case == "failed-CI": self.responses["/actions/runs/42"]["conclusion"] = "failure"
+                elif case == "stale": self.responses["/git/ref/heads/main"]["object"]["sha"] = "b" * 40
+                else: self.responses["/environments/game-publication"]["protection_rules"] = [{"type": "required_reviewers"}]
+                result = self.invoke("publish", str(self.root / ("auto-candidate-" + case)), "--artifact-id", "99")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((self.root / "writes.jsonl").exists())
+                self.assertFalse((self.root / "pushed").exists())
+                self.responses["/git/ref/heads/main"]["object"]["sha"] = REVISION
+                self.responses["/actions/runs/42"].update(event="push", head_repository={"id":1442331254}, conclusion="success")
+
+    def test_an_already_published_auto_attempt_can_finish_verification_after_main_advances(self):
+        self.automatic_publication()
+        result = self.invoke("publish", str(self.root / "finishing-candidate"), "--artifact-id", "99")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        receipt = self.root / "finishing.json"
+        receipt.write_text(result.stdout)
+        statement = {"predicateType": "https://slsa.dev/provenance/v1", "subject": [{"digest": {"sha256": self.env["EXPECTED_IMAGE_DIGEST"].removeprefix("sha256:")}}], "predicate": {"runDetails": {"metadata": {"invocationId": "https://github.com/scowalt/rngwars-game/actions/runs/77/attempts/1"}}}}
+        (self.root / "attestations.json").write_text(json.dumps([{"verificationResult": {"statement": statement}}]))
+        self.responses["/git/ref/heads/main"]["object"]["sha"] = "b" * 40
+        result = self.invoke("verify-published", str(receipt))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "game_image_publication_verified")
+
+    def test_auto_eligibility_skips_superseded_sources_without_reserving_anything(self):
+        self.automatic_publication()
+        path = self.root / "outputs"
+        self.env["GITHUB_OUTPUT"] = str(path)
+        result = self.invoke("resolve")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("eligible=true", path.read_text())
+        path.unlink()
+        self.responses["/git/ref/heads/main"]["object"]["sha"] = "b" * 40
+        result = self.invoke("resolve")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "automatic_source_superseded")
+        self.assertIn("eligible=false", path.read_text())
+        self.assertFalse((self.root / "writes.jsonl").exists())
+        self.assertFalse((self.root / "pushed").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

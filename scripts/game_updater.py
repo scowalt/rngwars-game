@@ -166,16 +166,31 @@ class Updater:
         require(value["Name"] == "/" + name and value["Config"]["Labels"].get("info.rngwars.deployment-run") == str(run_id) and "game" not in (value["NetworkSettings"]["Networks"][network].get("Aliases") or []), "updater_created_binding")
         return identifier
 
+    def readiness(self):
+        state = self.run(["systemctl", "show", "rngwars-sqlite-backup.service", "--property=ActiveState", "--value"]).stdout.decode().strip()
+        if state in {"active", "activating", "deactivating", "reloading"}:
+            return 60
+        require(state == "inactive", "updater_backup_service_unavailable")
+        due = self.run(["systemctl", "show", "rngwars-sqlite-backup.timer", "--property=NextElapseUSecRealtime", "--value"]).stdout.decode().strip()
+        remaining = calendar.timegm(time.strptime(due, "%a %Y-%m-%d %H:%M:%S UTC")) - time.time()
+        require(remaining > 0, "updater_backup_timer_unavailable")
+        return min(1500, int(remaining) + 31) if remaining <= 1260 else 0
+
     def apply(self, envelope):
         descriptor = os.open(self.state / "lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         with os.fdopen(descriptor, "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             private_path(str(self.state / "lock"), os.geteuid())
             require(not (self.state / "inflight.json").exists() and not (self.state / "inflight.json").is_symlink(), "updater_operator_recovery_required")
-            request = authority.inspect(self.policy["authority_policy"], envelope)["request"]
+            verified = authority.inspect(self.policy["authority_policy"], envelope)
+            request = verified["request"]
             run_id = request["run_id"]
             area = self.state / ("attempt-" + str(run_id))
             require(not area.exists() and not area.is_symlink(), "updater_attempt_already_consumed")
+            if verified["status"] == "automatic_deployment_request_verified_no_execution":
+                delay = self.readiness()
+                if delay:
+                    return {"status": "deployment_deferred", "retry_after_seconds": delay, "run_id": run_id, "controller_revision": request["controller_revision"], "image_digest": request["image_digest"], "source_revision": request["image_source_revision"], "publication_run_id": request["publication_run_id"]}
             area.mkdir(mode=0o700)
             save(area / "request.json", request)
             save(self.state / "inflight.json", {"run_id": run_id})
@@ -316,6 +331,8 @@ def main():
         updater = Updater(policy)
         result = updater.apply(envelope) if args.operation != "status" else updater.status()
         print(json.dumps(result, sort_keys=True))
+        if result["status"] == "deployment_deferred":
+            return 75
         return 0 if result["status"] in {"game_deployed", "updater_status"} else 1
     except Blocked as error:
         print("Game updater blocked: " + str(error), file=sys.stderr)

@@ -42,6 +42,27 @@ class DispatchCLITests(unittest.TestCase):
                 rejected = subprocess.run([sys.executable, "-I", str(TOOL), "--socket", path], env={"PATH": os.environ["PATH"], "SSH_ORIGINAL_COMMAND": "sh -c echo-owned"}, input="{}", capture_output=True, text=True, timeout=10)
                 self.assertEqual(rejected.returncode, 64)
 
+    def test_a_bounded_read_only_deferral_is_distinct_from_a_failed_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / "worker.sock")
+            reply = {"status": "deployment_deferred", "retry_after_seconds": 60, "run_id": 501, "controller_revision": "a" * 40, "image_digest": "sha256:" + "b" * 64, "source_revision": "c" * 40, "publication_run_id": 77}
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+                server.bind(path)
+                server.listen(1)
+                server.settimeout(10)
+                def respond():
+                    connection, _ = server.accept()
+                    with connection:
+                        while connection.recv(8192):
+                            pass
+                        connection.sendall(json.dumps(reply).encode())
+                worker = threading.Thread(target=respond)
+                worker.start()
+                result = subprocess.run([sys.executable, "-I", str(TOOL), "--socket", path], env={"PATH": os.environ["PATH"], "SSH_ORIGINAL_COMMAND": "rngwars-game-deploy-v1"}, input=json.dumps({"version": 1, "run_id": 501, "github_token": "synthetic-transient-job-read-token"}), capture_output=True, text=True, timeout=15)
+                worker.join(timeout=10)
+                self.assertEqual(result.returncode, 75, result.stderr)
+                self.assertEqual(json.loads(result.stdout), reply)
+
 
 if __name__ == "__main__":
     unittest.main()

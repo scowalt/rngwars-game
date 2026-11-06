@@ -9,6 +9,8 @@ import time
 import tempfile
 import unittest
 
+import test_game_automation as automation_fixtures
+
 
 TOOL = Path(__file__).parents[1] / "game_network.py"
 REVISION = "a" * 40
@@ -22,7 +24,7 @@ class PrivatePreflightCLITests(unittest.TestCase):
         self.addCleanup(self.area.cleanup)
         self.root = Path(self.area.name)
         gh = self.root / "gh"
-        gh.write_text("#!" + sys.executable + "\nimport json,sys\nfrom pathlib import Path\nroot=Path(__file__).parent\nargs=sys.argv[1:];assert args[0]=='api' and args[args.index('--method')+1]=='GET'\nroute=args[-1].removeprefix('repos/scowalt/rngwars-game')\nresponses=json.loads((root/'responses.json').read_text());assert route in responses\nprint(json.dumps(responses[route]))\n")
+        gh.write_text("#!" + sys.executable + "\nimport json,sys\nfrom pathlib import Path\nroot=Path(__file__).parent\nargs=sys.argv[1:];assert args[0]=='api' and args[args.index('--method')+1]=='GET'\nroute=args[-1].removeprefix('repos/scowalt/rngwars-game')\nif route=='/actions/artifacts/78/zip': sys.stdout.buffer.write((root/'automatic-publication.zip').read_bytes());raise SystemExit(0)\nresponses=json.loads((root/'responses.json').read_text());assert route in responses\nprint(json.dumps(responses[route]))\n")
         gh.chmod(0o700)
         identity = {"id": 1442331254}
         self.environment = {"PATH": str(self.root) + os.pathsep + os.environ["PATH"], "HOME": str(self.root), "RUNNER_TEMP": str(self.root), "RUNNER_ENVIRONMENT": "github-hosted", "GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": REPOSITORY, "GITHUB_REPOSITORY_ID": "1442331254", "GITHUB_REPOSITORY_OWNER_ID": "1100550", "GITHUB_REF": "refs/heads/main", "GITHUB_SHA": REVISION, "GITHUB_WORKFLOW_SHA": REVISION, "GITHUB_WORKFLOW_REF": WORKFLOW, "GITHUB_RUN_ID": "99", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_ACTOR": "scowalt", "GITHUB_ACTOR_ID": "1100550", "GITHUB_TRIGGERING_ACTOR": "scowalt", "SOURCE_CI_RUN_ID": "42", "APPROVED_REVISION": REVISION, "GAME_PREFLIGHT_OPERATION": "verify-release", "GAME_PRIVATE_PREFLIGHT_ENABLED": "false"}
@@ -210,6 +212,62 @@ class PrivatePreflightCLITests(unittest.TestCase):
         blocked = self.invoke("deploy")
         self.assertNotEqual(blocked.returncode, 0)
         self.assertFalse((self.root / "deploy-called").exists())
+
+    def enable_automatic(self):
+        fixture = automation_fixtures.AutomaticLineageCLITests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        fixture.publication()
+        fixture.api["/actions/workflows/game-publication.yml"]["id"] = 15
+        fixture.api["/actions/runs/77"]["workflow_id"] = 15
+        self.responses.update(fixture.api)
+        (self.root / "automatic-publication.zip").write_bytes((fixture.root / "artifact.zip").read_bytes())
+        self.environment.update(GITHUB_EVENT_NAME="workflow_run", GAME_AUTOMATIC_CD_ENABLED="true", GAME_DEPLOYMENT_ENABLED="true", GAME_PREFLIGHT_OPERATION="deploy", PUBLICATION_RUN_ID="77", IMAGE_SOURCE_REVISION=REVISION, EXPECTED_IMAGE_DIGEST="sha256:" + "c" * 64)
+        self.responses["/actions/runs/99"]["event"] = "workflow_run"
+        self.responses["/environments/game-production"]["protection_rules"] = []
+        self.responses["/actions/runs/99/approvals"] = []
+        inventory = self.responses["/actions/runs/99/attempts/1/jobs?per_page=100"]
+        inventory["jobs"].pop(1)
+        inventory["total_count"] = 2
+        inventory["jobs"][-1].update(status="in_progress", conclusion=None)
+
+    def test_automatic_resolution_derives_the_release_inputs_from_verified_provider_artifacts(self):
+        self.enable_automatic()
+        self.environment.update(GITHUB_JOB="resolve", GITHUB_ENV=str(self.root / "github-env"), GITHUB_OUTPUT=str(self.root / "github-output"))
+        result = self.invoke("automatic")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "automatic_release_resolved")
+        self.assertIn("SOURCE_CI_RUN_ID=42", (self.root / "github-env").read_text())
+        self.assertIn("EXPECTED_IMAGE_DIGEST=sha256:" + "c" * 64, (self.root / "github-env").read_text())
+        self.assertIn("eligible=true", (self.root / "github-output").read_text())
+        self.assertFalse((self.root / "daemon-pid").exists())
+
+    def automatic_transport(self):
+        self.enable_transport()
+        self.enable_automatic()
+        self.environment.update(GITHUB_JOB="deploy", GH_TOKEN="synthetic-job-read-token")
+        (self.root / "ssh").rename(self.root / "probe-ssh")
+        ssh = self.root / "ssh"
+        ssh.write_text("#!" + sys.executable + "\nimport json,os,sys\nfrom pathlib import Path\nr=Path(__file__).parent\nif sys.argv[-1]=='rngwars-game-preflight-v1':os.execv(str(r/'probe-ssh'),[str(r/'probe-ssh'),*sys.argv[1:]])\nassert sys.argv[-1]=='rngwars-game-deploy-v1' and 'GH_TOKEN' not in os.environ\nassert json.load(sys.stdin)=={'version':1,'run_id':99,'github_token':'synthetic-job-read-token'}\np=r/'deployment-calls';n=int(p.read_text())+1 if p.exists() else 1;p.write_text(str(n))\nif (r/'unknown-outcome').exists():print('private-failure-diagnostic',file=sys.stderr);raise SystemExit(255)\nv={'status':'deployment_deferred' if n==1 else 'game_deployed','run_id':99,'controller_revision':'" + REVISION + "','image_digest':'sha256:" + "c" * 64 + "','source_revision':'" + REVISION + "','publication_run_id':77}\nif n==1:v['retry_after_seconds']=1\nprint(json.dumps(v));raise SystemExit(75 if n==1 else 0)\n")
+        ssh.chmod(0o700)
+
+    def test_auto_waits_only_after_an_explicit_read_only_host_deferral(self):
+        self.automatic_transport()
+        result = self.invoke("deploy")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "game_deployed")
+        self.assertEqual((self.root / "deployment-calls").read_text(), "2")
+        self.assertFalse((self.root / "rngwars-game-network-99-1").exists())
+        self.assertNotIn("synthetic-job-read-token", result.stdout + result.stderr)
+
+    def test_auto_never_retries_an_unconfirmed_host_mutation(self):
+        self.automatic_transport()
+        (self.root / "unknown-outcome").touch()
+        result = self.invoke("deploy")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.root / "deployment-calls").read_text(), "1")
+        self.assertFalse((self.root / "rngwars-game-network-99-1").exists())
+        self.assertNotIn("private-failure-diagnostic", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

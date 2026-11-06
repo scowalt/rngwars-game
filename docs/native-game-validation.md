@@ -44,5 +44,13 @@ failure; no shared cleanup command is used.
 The image includes the project's license and third-party notices. Their inclusion is not a blanket
 legal determination for every dependency or base image. Native smoke success proves only synthetic
 local backup/restore, not production-host, real off-host backup/recovery or state-ownership
-acceptance. The intentionally dormant game is not restarted by this workflow. Publishing and live
-recovery retain their separate safeguards.
+acceptance. The production game is not touched by this workflow. Publishing and live recovery retain
+their separate safeguards.
+
+The separate native updater fixture exercises automatic policy version2 with synthetic provider and
+registry transports. It checks a nonmutating backup deferral through the actual unprivileged SSH
+relay/root Unix socket, then uses the same unconsumed request for a real native container
+replacement. It also tests captured-container rollback, encrypted local recovery, persistent
+profile/data, peer identity rejection and the full service sandbox's capability-free database
+identity drop. These tests do not claim actual GitHub authority, release cryptography or live-host
+acceptance.

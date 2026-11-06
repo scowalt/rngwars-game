@@ -40,10 +40,11 @@ resource "github_branch_protection" "main" {
     contexts = [
       "Build API (F#)",
       "Build Frontend (SolidJS)",
+      "Portable SQLite backup and deployment preparation",
     ]
   }
 
-  enforce_admins = false
+  enforce_admins = true
 
   allows_force_pushes = false
 

@@ -44,13 +44,18 @@ class GamePublicationWorkflowTests(unittest.TestCase):
     def test_native_source_build_is_separate_from_reviewed_registry_and_signing_permissions(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/game-publication.yml").read_text())
         triggers = workflow.get("on", workflow.get(True))
-        self.assertEqual(set(triggers), {"workflow_dispatch"})
+        self.assertEqual(set(triggers), {"workflow_dispatch", "workflow_run"})
+        self.assertEqual(triggers["workflow_run"], {"workflows": ["CI"], "types": ["completed"], "branches": ["main"]})
+        self.assertEqual(triggers["workflow_dispatch"]["inputs"]["operation"]["options"], ["validate"])
         self.assertEqual(triggers["workflow_dispatch"]["inputs"]["operation"]["default"], "validate")
         self.assertEqual(workflow["permissions"], {"contents": "read"})
         self.assertEqual(workflow["env"]["GAME_PUBLICATION_ENABLED"], "${{ vars.GAME_PUBLICATION_ENABLED }}")
         self.assertNotIn("GAME_PUBLICATION_ENABLED", triggers["workflow_dispatch"]["inputs"])
         self.assertFalse(workflow["concurrency"]["cancel-in-progress"])
+        self.assertEqual(workflow["env"]["GAME_AUTOMATIC_CD_ENABLED"], "${{ vars.GAME_AUTOMATIC_CD_ENABLED }}")
         jobs = workflow["jobs"]
+        for value in ["1442331254", "1100550", "refs/heads/main", "workflow_run.conclusion == 'success'", "workflow_run.head_repository.id", "workflow_run.event == 'push'", "GAME_AUTOMATIC_CD_ENABLED"]:
+            self.assertIn(value, jobs["resolve"]["if"])
         native = jobs["native-build"]
         self.assertEqual(native["name"], "Build and exercise native image")
         self.assertEqual(native["runs-on"], "ubuntu-24.04-arm")
@@ -67,7 +72,8 @@ class GamePublicationWorkflowTests(unittest.TestCase):
         self.assertEqual(jobs["prepare"]["permissions"], {"contents": "read", "actions": "read"})
         publish = jobs["publish"]
         self.assertEqual(publish["environment"], "game-publication")
-        self.assertEqual(publish["if"], "inputs.operation == 'publish'")
+        self.assertIn("github.event_name == 'workflow_run'", publish["if"])
+        self.assertIn("needs.prepare.outputs.eligible == 'true'", publish["if"])
         self.assertEqual(publish["permissions"], {"contents": "write", "actions": "read", "packages": "write", "attestations": "write", "id-token": "write"})
         signing = next(s for s in publish["steps"] if s.get("uses", "").startswith("actions/attest-build-provenance@"))
         self.assertEqual(signing["with"]["subject-name"], "ghcr.io/scowalt/rngwars-game-releases")

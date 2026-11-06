@@ -14,6 +14,7 @@ Environment=LC_ALL=C
 StandardInput=socket
 StandardOutput=socket
 StandardError=journal
+SuccessExitStatus=75
 UMask=0077
 RuntimeMaxSec=930
 TimeoutStopSec=10

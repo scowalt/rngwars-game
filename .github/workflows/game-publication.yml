@@ -1,6 +1,10 @@
 name: Game image publication
 
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       approved_revision:
@@ -12,9 +16,9 @@ on:
         type: string
         required: true
       operation:
-        description: Validate only or request protected publication
+        description: Manual validation does not publish or deploy
         type: choice
-        options: [validate, publish]
+        options: [validate]
         default: validate
         required: true
 
@@ -26,13 +30,22 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  APPROVED_REVISION: ${{ inputs.approved_revision }}
-  SOURCE_CI_RUN_ID: ${{ inputs.source_ci_run_id }}
-  GAME_PUBLICATION_OPERATION: ${{ inputs.operation }}
+  APPROVED_REVISION: ${{ github.event_name == 'workflow_run' && github.sha || inputs.approved_revision }}
+  SOURCE_CI_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_ci_run_id }}
+  GAME_PUBLICATION_OPERATION: ${{ github.event_name == 'workflow_run' && 'publish' || 'validate' }}
   GAME_PUBLICATION_ENABLED: ${{ vars.GAME_PUBLICATION_ENABLED }}
+  GAME_AUTOMATIC_CD_ENABLED: ${{ vars.GAME_AUTOMATIC_CD_ENABLED }}
 
 jobs:
   resolve:
+    if: >-
+      github.repository_id == '1442331254' && github.actor_id == '1100550' &&
+      github.ref == 'refs/heads/main' && github.run_attempt == 1 &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && vars.GAME_AUTOMATIC_CD_ENABLED == 'true' &&
+      vars.GAME_PUBLICATION_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.id == 1442331254 &&
+      github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'push'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -40,6 +53,7 @@ jobs:
       actions: read
     outputs:
       source_revision: ${{ steps.resolve.outputs.source_revision }}
+      eligible: ${{ steps.resolve.outputs.eligible }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -54,6 +68,7 @@ jobs:
   native-build:
     name: Build and exercise native image
     needs: resolve
+    if: needs.resolve.outputs.eligible == 'true'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     permissions:
@@ -132,6 +147,7 @@ jobs:
       contents: read
       actions: read
     outputs:
+      eligible: ${{ steps.prepare.outputs.eligible }}
       image_sha256: ${{ steps.prepare.outputs.image_sha256 }}
       archive_sha256: ${{ steps.prepare.outputs.archive_sha256 }}
     steps:
@@ -145,7 +161,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_ARTIFACT_ID: ${{ needs.native-build.outputs.artifact_id }}
         run: python3 scripts/game_publication.py prepare "$RUNNER_TEMP/accepted-game" --artifact-id "$SOURCE_ARTIFACT_ID"
-      - name: Show the exact candidate before protected review
+      - name: Show the exact candidate before automatic publication
+        if: steps.prepare.outputs.eligible == 'true'
         env:
           IMAGE_SHA256: ${{ steps.prepare.outputs.image_sha256 }}
           ARCHIVE_SHA256: ${{ steps.prepare.outputs.archive_sha256 }}
@@ -154,7 +171,7 @@ jobs:
 
   publish:
     needs: [resolve, native-build, prepare]
-    if: inputs.operation == 'publish'
+    if: github.event_name == 'workflow_run' && needs.prepare.outputs.eligible == 'true'
     environment: game-publication
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -184,7 +201,7 @@ jobs:
           mkdir -m 0700 "$home"
           printf '%s\n' "$GITHUB_RUN_ID" > "$home/.game-publication-home-owner"
           printf 'GAME_PUBLICATION_HOME=%s\nDOCKER_CONFIG=%s/.docker\n' "$home" "$home" >> "$GITHUB_ENV"
-      - name: Recheck review, reserve the attempt and publish the exact digest
+      - name: Recheck main push authority, reserve the attempt and publish the exact digest
         id: push
         env:
           GH_TOKEN: ${{ github.token }}
@@ -192,7 +209,8 @@ jobs:
           EXPECTED_IMAGE_DIGEST: sha256:${{ needs.prepare.outputs.image_sha256 }}
           EXPECTED_ARCHIVE_SHA256: ${{ needs.prepare.outputs.archive_sha256 }}
         run: python3 scripts/game_publication.py publish "$RUNNER_TEMP/publication-candidate" --artifact-id "$SOURCE_ARTIFACT_ID" > "$RUNNER_TEMP/game-publication-published.json"
-      - name: Attest the published image from the reviewed trusted-main job
+      - name: Attest the published image from the trusted-main job
+        if: steps.push.outputs.image_sha256 != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
         env:
           HOME: ${{ env.GAME_PUBLICATION_HOME }}
@@ -203,10 +221,12 @@ jobs:
           create-storage-record: false
           show-summary: false
       - name: Verify genuine registry provenance and exact invocation
+        if: steps.push.outputs.image_sha256 != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/game_publication.py verify-published "$RUNNER_TEMP/game-publication-published.json" > "$RUNNER_TEMP/game-publication-verified.json"
       - name: Retain bounded public publication evidence
+        if: steps.push.outputs.image_sha256 != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: game-publication-${{ github.run_id }}-${{ github.run_attempt }}

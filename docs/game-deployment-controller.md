@@ -7,17 +7,18 @@ root-owned installation, protected workflow variable and real operational accept
 
 ## Protected delivery
 
-The manual `Game deployment` workflow defaults to `verify-release`. `private-preflight` still tests
-transport without updating the game. The explicit `deploy` operation additionally requires the
-trusted repository variable `GAME_DEPLOYMENT_ENABLED=true`; it is disabled when absent or false.
-This setting is not a caller input. Both private operations use the existing main-only,
-owner-reviewed `game-production` environment and the same narrowly scoped ephemeral OIDC trust.
+[Automatic delivery](automatic-game-cd.md) follows successful owner main-push CI and its signed
+publication. It requires trusted `GAME_AUTOMATIC_CD_ENABLED` and `GAME_DEPLOYMENT_ENABLED`
+variables, not caller inputs. The main-only `game-production` environment has no per-release
+reviewer in automatic mode; the approval point is the protected main merge. Manual workflow dispatch
+is read-only release verification and receives no private deployment capability.
 
-Before review, `resolve` verifies the signed release and uploads exactly one public
+Before private access, `resolve` verifies the signed release and uploads exactly one public
 `game-deployment-request-<run>-1` artifact. It contains `request.json`, with exactly `version`,
 `operation`, `run_id`, `controller_revision`, `ci_run_id`, `image_source_revision`, `image_digest`,
-and `publication_run_id`. These are public identifiers, never credentials or host bindings.
-Reviewers see the exact release and accept the brief single-instance interruption.
+and `publication_run_id`. These are public identifiers, never credentials or host bindings. The
+exact release is recorded before execution. A single-instance replacement briefly interrupts
+connections.
 
 The deployment job rechecks authority, verifies pinned private SSH and negative network routes, then
 sends only `{version, run_id, github_token}` over private stdin to a fixed command. The token is the
@@ -50,21 +51,25 @@ the rendered worker restrictions, rather than assuming that a bounding-set entry
 
 `game_deploy_authority.py inspect --policy <absolute-private-policy>` remains a non-executing
 interface. The worker calls it independently; a caller-supplied successful receipt is never enough.
-The immutable policy pins the exact environment, deployment workflow blob, CI workflow blob and
-entire scripts tree. Application-only commits can keep those pins; controller changes need a
-reviewed host policy/code update.
+The version2 immutable policy pins the exact environment, deployment workflow blob and CI workflow
+blob. It does not pin the entire scripts tree: ordinary application, documentation and test edits
+can deploy while the installed root code remains unchanged. Privileged contract/controller changes
+need a reviewed host policy/code update; no downloaded repository code runs as root.
 
 The host fetches the uniquely named artifact itself and checks its SHA-256 transport digest,
 source/run relationship, creation/finalization before the protected job starts, bounded regular ZIP
-member and exact JSON fields. It requires owner review, current main, fresh successful same-source
-CI, first attempts and the expected hosted jobs. Run/review/job/main state is checked again.
-Missing, stale, fork, self-hosted, duplicate or unreviewed requests fail closed.
+member and exact JSON fields. Automatic authority requires current main, successful owner main-push
+CI, the exact successful automatic publisher and its receipt, first attempts and expected hosted
+jobs. Run/job/main state is rechecked. Missing, stale, fork, self-hosted, duplicate or mismatched
+requests fail closed. The separately supported legacy version1 contract still requires explicit
+owner release review; it is not an automatic fallback.
 
-The authority policy has exactly `version` (`1`), `environment_id`, `workflow_blob`, `ci_blob` and
-`scripts_tree`. Files must be singly linked, read-only, owned by the executing user and under safe
-private ancestors. Non-root disposable tests use their own policies; an installed worker requires
-root-owned code/policy and fixed trusted executable paths. User-controlled CLI tools or test
-policies cannot confer privileged host authority.
+Version2 authority policy has exactly `version` (`2`), `environment_id`, `workflow_blob` and
+`ci_blob`. Legacy version1 additionally requires `scripts_tree`. Files must be singly linked,
+read-only, owned by the executing user and under safe private ancestors. Non-root disposable tests
+use their own policies; an installed worker requires root-owned code/policy and fixed trusted
+executable paths. User-controlled CLI tools or test policies cannot confer privileged host
+authority.
 
 ## Executing transaction
 
@@ -76,11 +81,13 @@ ownership label, peer IDs and bounded health timeout. There are no production ta
 
 The transaction:
 
-1. Takes a project-only lock and reserves a durable, never-overwritten per-run attempt. An
-   unfinished attempt blocks later mutation until an operator resolves it. Tokens are never saved.
-2. Checks actual host identity, the captured container and its isolation/storage, the existing
-   network and database. It refuses the last 20 minutes before the next scheduled backup; the
-   updater has a shorter bounded execution window, so it does not stop or replace the timer.
+1. Takes a project-only lock and independently verifies authority. Automatic requests may explicitly
+   defer for an active/approaching backup before any attempt reservation or mutation. Only that
+   read-only response permits a bounded caller wait/recheck, never an ambiguous response.
+2. Reserves a durable, never-overwritten per-run attempt and checks actual host, captured container,
+   isolation/storage, network and database. Unfinished attempts require operator recovery. The
+   mutation window still excludes the last 20 minutes before the next backup; the timer is not
+   stopped or replaced. Tokens are never saved.
 3. Independently fetches and verifies release provenance and exact image configuration/rootfs. No
    image is selected by tag, caller command, arbitrary path or caller-supplied trust root.
 4. Uses the database account to make an encrypted recovery point, restore it separately and compare
@@ -98,9 +105,11 @@ backup automatically. Changed data, unclear Docker mutations, interrupted attemp
 require operator recovery, not a guessed rollback or a blind retry. A durable attempt cannot be
 replayed even if the hosted job lost its connection.
 
-Outcomes are `game_deployed`, `game_rolled_back`, `deployment_blocked_before_live_change`, or
-`operator_recovery_required`. Only the first is a successful deployment. Preserve failed run and
-host receipts; do not hide a rollback behind a green job.
+Terminal outcomes are `game_deployed`, `game_rolled_back`, `deployment_blocked_before_live_change`,
+or `operator_recovery_required`. Only the first is a successful deployment. `deployment_deferred` is
+a distinct nonmutating response with exit75 and a bounded `retry_after_seconds`; it does not create
+or consume an attempt. Preserve failed run and host receipts; do not hide a rollback behind a green
+job.
 
 ## Verification and activation
 

@@ -86,6 +86,15 @@ class PreparationTests(unittest.TestCase):
         self.assertIn("for_each = var.firewall_rules", host)
         self.assertNotIn('port       = "22"', host)
 
+    def test_main_merge_protection_keeps_admin_enforcement_and_all_three_CI_gates(self):
+        source = (ROOT / "infra/github.tf").read_text()
+        main = source.split('resource "github_branch_protection" "main" {', 1)[1].split('resource "github_branch_protection" "release" {', 1)[0]
+        self.assertRegex(main, r"enforce_admins\s*=\s*true")
+        self.assertIn('"Portable SQLite backup and deployment preparation"', main)
+        self.assertIn("required_pull_request_reviews", main)
+        self.assertRegex(main, r"allows_force_pushes\s*=\s*false")
+        self.assertRegex(main, r"allows_deletions\s*=\s*false")
+
     def test_ci_covers_promotions_and_has_no_secret_or_publisher_jobs(self):
         ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
         self.assertEqual(ci[True]["push"]["branches"], ["**"])

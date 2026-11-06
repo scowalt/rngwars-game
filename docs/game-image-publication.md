@@ -4,35 +4,28 @@
 provenance. It never deploys the game, opens a host port, reads a real database or receives a host,
 backup or tailnet credential. Registry publication is not deployment acceptance.
 
-## Invocation and review
+## Automatic invocation
 
-The workflow supports owner-only `workflow_dispatch` on current `main`, first attempt only. Inputs
-are the exact approved revision, a successful current-main CI run ID from the last 24 hours, and
-`operation` (`validate` by default, or `publish`). All three existing CI jobs must have succeeded.
-Branch/ref, repository/owner IDs, workflow identity, actual run actor and triggering actor are
-checked against GitHub metadata, not only environment strings.
+The workflow follows successful first-attempt owner **push CI on main** in this repository. All
+three CI jobs must succeed. It independently rechecks branch/ref, repository/head-repository IDs,
+workflow identity, owner/triggering actor, exact source and CI freshness against GitHub metadata.
+PR/fork, feature-branch, manual-CI and failed or rerun contexts do not authorize publication.
 
-`validate` builds and verifies a candidate without requesting publication or signing privileges.
-`publish` also enters the separately configured `game-publication` environment. Before dispatching
-publication, the owner must configure that environment with:
+The main-only `game-publication` environment has no per-release reviewer in automatic mode and no
+admin bypass. Both `GAME_AUTOMATIC_CD_ENABLED=true` and `GAME_PUBLICATION_ENABLED=true` are required
+from trusted repository variables, not user inputs. The existing immutable release-attempt ruleset
+must still prohibit update/deletion bypass. The approval point is the owner's protected main merge;
+see [automatic delivery](automatic-game-cd.md).
 
-- A main-only custom branch policy, exactly the owner reviewer, self-review permitted for the single
-  maintainer, and no admin bypass.
-- Repository variable `GAME_PUBLICATION_ENABLED=true`. Absence or any other value blocks publishing.
-- The existing immutable release-attempt ruleset, with no update/deletion bypass. The owner checks
-  the complete management view immediately before approving each candidate.
+Owner-only manual dispatch retains `validate`, which builds/verifies a candidate without publishing
+or signing. Automatic source and controller revisions must still be current before publication;
+obsolete queued revisions are skipped or refused. The publisher rechecks the exact manifest and
+archive after independently downloading the native artifact. Once a publication has happened, its
+verification may finish even if main advances, so an already reserved attempt is not abandoned or
+replayed. Disabling a switch prevents later starts; it does not cancel an active publication.
 
-For a publication request, `resolve` checks the enablement and preexisting protected environment
-before the privileged job can be scheduled. Enablement is supplied by GitHub's repository `vars`
-context, not a dispatch input or a Variables-management API token. The publisher checks that
-injected value and rereads environment/branch policies and this run's actual review history after
-the gate. Disabling the variable gates later jobs/dispatches; it does not cancel a job already
-executing. A missing, rejected, wrong-user or ambiguous review blocks registry writes. Source and
-controller revision must still be current. Review the source, manifest digest and archive digest
-shown by `prepare`; the publisher rechecks both digests after downloading the artifact again.
-Private target ownership, controller fencing and real recovery evidence remain owner acceptance
-gates outside the public workflow. The workflow does not turn a caller-supplied recovery boolean
-into operational evidence.
+Host identity, fencing, storage and real encrypted recovery remain separately verified by the
+updater. A caller-supplied recovery boolean is never treated as operational evidence.
 
 ## Build and artifact isolation
 
@@ -62,7 +55,7 @@ new private output directory; it does not overwrite another candidate.
 
 ## Registry and provenance
 
-Only the reviewed publication job receives the successor's `GITHUB_TOKEN` with package-write,
+Only the main-authorized publication job receives the successor's `GITHUB_TOKEN` with package-write,
 attestation-write, contents-write and OIDC permissions. Contents-write reserves an immutable
 `release-attempt/game-publication/<full-source-SHA>` tag before image upload. No historical package
 access or owner-wide package credential is granted to this repository.
@@ -101,5 +94,7 @@ digest and this run's first invocation. A matching digest or unverified JSON alo
 Portable tests use real CLI/file behavior and external tool/provider doubles. They do not prove
 registry permissions, a hosted build, signatures or production readiness. Actual protected workflow
 execution and independent registry/provenance verification are required before accepting
-publication. No real game deployment or database operation follows automatically. See
+publication. A successful automatic publication triggers the separate guarded deployment workflow,
+which must independently verify the complete chain and host safety; the publisher itself has no host
+capability. See [automatic delivery](automatic-game-cd.md),
 [release boundaries](release-boundary.md) and [native validation](native-game-validation.md).
