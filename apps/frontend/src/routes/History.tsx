@@ -48,69 +48,70 @@ const History: Component = () => {
   }
 
   return (
-    <div class="flex-1 flex flex-col items-center p-6 max-w-2xl mx-auto w-full">
-      <h2 class="text-2xl font-bold mb-6">Match History</h2>
+    <div class="page-column">
+      <h2 class="page-title">Match History</h2>
 
       <Show when={loading()}>
-        <div class="animate-pulse text-gray-400">Loading...</div>
+        <div class="loading-text">Loading...</div>
       </Show>
 
       <Show when={!loading() && matches().length === 0}>
-        <div class="text-center text-gray-500">
-          <p class="mb-4">No matches yet.</p>
-          <button
-            onClick={() => navigate("/")}
-            class="px-6 py-2 bg-brand hover:bg-brand-light rounded-lg transition-colors text-white"
-          >
+        <div class="history-empty">
+          <p class="history-empty-message">No matches yet.</p>
+          <button onClick={() => navigate("/")} class="button button-primary">
             Play Now
           </button>
         </div>
       </Show>
 
       <Show when={!loading() && matches().length > 0}>
-        <div class="w-full space-y-2">
+        <div class="history-list">
           <For each={matches()}>
             {(m) => {
               const change = eloChange(m);
               return (
-                <div class="flex items-center gap-4 px-4 py-3 bg-gray-900 rounded-lg border border-gray-800">
+                <div class="list-row history-row">
                   {}
                   <div
-                    class={`w-2 h-8 rounded-full ${
+                    class={
                       m.won === true
-                        ? "bg-green-500"
+                        ? "result-marker result-marker-win"
                         : m.won === false
-                          ? "bg-red-500"
-                          : "bg-gray-600"
-                    }`}
+                          ? "result-marker result-marker-loss"
+                          : "result-marker"
+                    }
                   />
 
                   {}
-                  <div class="flex-1 min-w-0">
-                    <div class="font-semibold truncate">vs {m.opponentName}</div>
-                    <div class="text-xs text-gray-500">
+                  <div class="history-details">
+                    <div class="history-opponent">vs {m.opponentName}</div>
+                    <div class="history-meta">
                       {m.isPractice ? "Practice" : "Ranked"} · {formatTime(m.completedAt)}
                     </div>
                   </div>
 
                   {}
-                  <div class="text-right text-sm font-mono tabular-nums">
-                    <span class={m.won === true ? "text-green-400" : "text-white"}>
+                  <div class="history-rolls">
+                    <span
+                      class={m.won === true ? "history-roll history-roll-winner" : "history-roll"}
+                    >
                       {formatRoll(m.playerRoll)}
                     </span>
-                    <span class="text-gray-600 mx-1">vs</span>
-                    <span class={m.won === false ? "text-green-400" : "text-white"}>
+                    <span class="history-roll-versus">vs</span>
+                    <span
+                      class={m.won === false ? "history-roll history-roll-winner" : "history-roll"}
+                    >
                       {formatRoll(m.opponentRoll)}
                     </span>
                   </div>
 
                   {}
-                  <div class="w-16 text-right text-sm font-semibold">
+                  <div class="history-elo">
                     <Show
                       when={change !== null && !m.isPractice}
-                      fallback={<span class="text-gray-600">—</span>}
+                      fallback={<span class="history-elo-none">—</span>}
                     >
-                      <span class={change! >= 0 ? "text-green-400" : "text-red-400"}>
+                      <span class={change! >= 0 ? "history-elo-gain" : "history-elo-loss"}>
                         {change! >= 0 ? "+" : ""}
                         {change}
                       </span>
@@ -123,10 +124,7 @@ const History: Component = () => {
         </div>
 
         <Show when={hasMore()}>
-          <button
-            onClick={loadMore}
-            class="mt-4 px-6 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg transition-colors"
-          >
+          <button onClick={loadMore} class="button button-secondary load-more">
             Load More
           </button>
         </Show>

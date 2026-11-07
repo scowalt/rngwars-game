@@ -4,22 +4,22 @@ import { authStore } from "../stores/authStore";
 
 const Layout: ParentComponent = (props) => {
   return (
-    <div class="min-h-screen flex flex-col">
-      <nav class="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center justify-between">
-        <A href="/" class="text-xl font-bold text-brand">
+    <div class="app-shell">
+      <nav class="site-header">
+        <A href="/" class="site-logo">
           RNGWars
         </A>
-        <div class="flex items-center gap-4">
-          <A href="/leaderboard" class="text-gray-400 hover:text-white transition-colors">
+        <div class="site-nav">
+          <A href="/leaderboard" class="site-nav-link">
             Leaderboard
           </A>
-          <A href="/history" class="text-gray-400 hover:text-white transition-colors">
+          <A href="/history" class="site-nav-link">
             History
           </A>
-          <div class="text-sm text-gray-400">{authStore.user()?.username ?? "..."}</div>
+          <div class="site-user">{authStore.user()?.username ?? "..."}</div>
         </div>
       </nav>
-      <main class="flex-1 flex flex-col">{props.children}</main>
+      <main class="app-main">{props.children}</main>
     </div>
   );
 };

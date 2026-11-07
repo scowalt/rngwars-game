@@ -43,15 +43,12 @@ const UsernameEditor: Component = () => {
       <Show
         when={editing()}
         fallback={
-          <button
-            onClick={startEditing}
-            class="text-lg font-semibold hover:text-brand transition-colors cursor-pointer"
-          >
-            {authStore.user()?.username ?? "..."} <span class="text-gray-500 text-sm">edit</span>
+          <button onClick={startEditing} class="username-button">
+            {authStore.user()?.username ?? "..."} <span class="username-edit-hint">edit</span>
           </button>
         }
       >
-        <div class="flex items-center gap-2">
+        <div class="username-form">
           <input
             type="text"
             value={value()}
@@ -61,25 +58,18 @@ const UsernameEditor: Component = () => {
               if (e.key === "Escape") cancel();
             }}
             maxLength={20}
-            class="bg-gray-800 border border-gray-600 rounded px-3 py-1 text-white focus:border-brand focus:outline-none"
+            class="username-input"
             autofocus
           />
-          <button
-            onClick={save}
-            disabled={saving()}
-            class="px-3 py-1 bg-brand rounded text-white text-sm hover:bg-brand-light disabled:opacity-50"
-          >
+          <button onClick={save} disabled={saving()} class="editor-button editor-button-save">
             {saving() ? "..." : "Save"}
           </button>
-          <button
-            onClick={cancel}
-            class="px-3 py-1 bg-gray-700 rounded text-white text-sm hover:bg-gray-600"
-          >
+          <button onClick={cancel} class="editor-button editor-button-cancel">
             Cancel
           </button>
         </div>
         <Show when={error()}>
-          <p class="text-red-400 text-sm mt-1">{error()}</p>
+          <p class="username-error">{error()}</p>
         </Show>
       </Show>
     </div>

@@ -5,18 +5,18 @@ const PlayerStats: Component = () => {
   const user = authStore.user;
 
   return (
-    <div class="flex gap-6 text-sm">
-      <div class="text-center">
-        <div class="text-2xl font-bold text-brand">{user()?.rngScore ?? "—"}</div>
-        <div class="text-gray-500 uppercase tracking-wide text-xs">RNG Score</div>
+    <div class="player-stats">
+      <div class="player-stat">
+        <div class="player-stat-value player-stat-score">{user()?.rngScore ?? "—"}</div>
+        <div class="player-stat-label">RNG Score</div>
       </div>
-      <div class="text-center">
-        <div class="text-2xl font-bold text-green-400">{user()?.totalWins ?? 0}</div>
-        <div class="text-gray-500 uppercase tracking-wide text-xs">Wins</div>
+      <div class="player-stat">
+        <div class="player-stat-value player-stat-wins">{user()?.totalWins ?? 0}</div>
+        <div class="player-stat-label">Wins</div>
       </div>
-      <div class="text-center">
-        <div class="text-2xl font-bold text-red-400">{user()?.totalLosses ?? 0}</div>
-        <div class="text-gray-500 uppercase tracking-wide text-xs">Losses</div>
+      <div class="player-stat">
+        <div class="player-stat-value player-stat-losses">{user()?.totalLosses ?? 0}</div>
+        <div class="player-stat-label">Losses</div>
       </div>
     </div>
   );
