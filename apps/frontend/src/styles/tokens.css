@@ -1,0 +1,84 @@
+@layer theme {
+  :root {
+    --font-sans:
+      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", Arial,
+      sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    --font-mono:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+      monospace;
+
+    --color-brand: #fd4f00;
+    --color-brand-light: #ff7a3d;
+    --color-white: #fff;
+    --color-gray-300: oklch(87.2% 0.01 258.338);
+    --color-gray-400: oklch(70.7% 0.022 261.325);
+    --color-gray-500: oklch(55.1% 0.027 264.364);
+    --color-gray-600: oklch(44.6% 0.03 256.802);
+    --color-gray-700: oklch(37.3% 0.034 259.733);
+    --color-gray-800: oklch(27.8% 0.033 256.848);
+    --color-gray-900: oklch(21% 0.034 264.665);
+    --color-gray-950: oklch(13% 0.028 261.692);
+    --color-red-400: oklch(70.4% 0.191 22.216);
+    --color-red-500: oklch(63.7% 0.237 25.331);
+    --color-green-400: oklch(79.2% 0.209 151.711);
+    --color-green-500: oklch(72.3% 0.219 149.579);
+    --color-yellow-400: oklch(85.2% 0.199 91.936);
+    --color-amber-600: oklch(66.6% 0.179 58.318);
+
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-12: 3rem;
+
+    --text-xs: 0.75rem;
+    --leading-xs: calc(1 / 0.75);
+    --text-sm: 0.875rem;
+    --leading-sm: calc(1.25 / 0.875);
+    --text-lg: 1.125rem;
+    --leading-lg: calc(1.75 / 1.125);
+    --text-xl: 1.25rem;
+    --leading-xl: calc(1.75 / 1.25);
+    --text-2xl: 1.5rem;
+    --leading-2xl: calc(2 / 1.5);
+    --text-3xl: 1.875rem;
+    --leading-3xl: calc(2.25 / 1.875);
+    --text-4xl: 2.25rem;
+    --leading-4xl: calc(2.5 / 2.25);
+    --text-5xl: 3rem;
+    --text-6xl: 3.75rem;
+    --text-9xl: 8rem;
+
+    --weight-semibold: 600;
+    --weight-bold: 700;
+    --weight-black: 900;
+    --tracking-wide: 0.025em;
+    --tracking-wider: 0.05em;
+
+    --radius-sm: 0.25rem;
+    --radius-lg: 0.5rem;
+    --radius-full: 9999px;
+
+    --container-2xl: 42rem;
+
+    --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+    --duration-fast: 150ms;
+    --transition-colors:
+      color var(--duration-fast) var(--ease-standard),
+      background-color var(--duration-fast) var(--ease-standard),
+      border-color var(--duration-fast) var(--ease-standard),
+      outline-color var(--duration-fast) var(--ease-standard),
+      text-decoration-color var(--duration-fast) var(--ease-standard),
+      fill var(--duration-fast) var(--ease-standard),
+      stroke var(--duration-fast) var(--ease-standard);
+    --animate-pulse: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulse {
+    50% {
+      opacity: 0.5;
+    }
+  }
+}

@@ -15,37 +15,34 @@ const Navigation: Component<NavigationProps> = (props) => {
   const gameUrl = props.gameUrl || "http://localhost:4000";
 
   return (
-    <div class="min-h-screen bg-linear-to-br from-purple-600 to-blue-500">
+    <div class="landing">
       {}
-      <nav class="fixed top-0 left-0 right-0 z-50 bg-black/20 backdrop-blur-md border-b border-white/10">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div class="flex items-center justify-between h-16">
+      <nav class="site-header">
+        <div class="site-header-inner">
+          <div class="site-header-bar">
             {}
-            <div class="shrink-0">
-              <span class="text-xl font-bold text-white tracking-wider">RNGWars</span>
+            <div class="site-brand">
+              <span class="site-wordmark">RNGWars</span>
             </div>
 
             {}
             {}
 
             {}
-            <div class="hidden md:flex items-center space-x-4">
-              <a
-                href={gameUrl}
-                class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 backdrop-blur-xs"
-              >
+            <div class="desktop-nav">
+              <a href={gameUrl} class="play-link">
                 Play
               </a>
             </div>
 
             {}
-            <div class="md:hidden">
+            <div class="menu-toggle-wrap">
               <button
                 onClick={toggleMobileMenu}
-                class="text-white/90 hover:text-white p-2 transition-colors duration-200"
+                class="menu-toggle"
                 aria-label="Toggle mobile menu"
               >
-                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg class="menu-toggle-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path
                     stroke-linecap="round"
                     stroke-linejoin="round"
@@ -60,15 +57,12 @@ const Navigation: Component<NavigationProps> = (props) => {
 
         {}
         <div
-          class={`md:hidden transition-all duration-300 ease-in-out ${
-            isMobileMenuOpen() ? "max-h-96 opacity-100" : "max-h-0 opacity-0 overflow-hidden"
-          }`}
+          class={
+            isMobileMenuOpen() ? "mobile-menu mobile-menu-open" : "mobile-menu mobile-menu-closed"
+          }
         >
-          <div class="px-4 pt-2 pb-4 space-y-2 bg-black/30 backdrop-blur-lg border-t border-white/10">
-            <a
-              href={gameUrl}
-              class="block bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-md text-base font-medium transition-colors duration-200 backdrop-blur-xs text-center"
-            >
+          <div class="mobile-menu-panel">
+            <a href={gameUrl} class="play-link play-link-mobile">
               Play
             </a>
           </div>
@@ -76,10 +70,8 @@ const Navigation: Component<NavigationProps> = (props) => {
       </nav>
 
       {}
-      <div class="flex items-center justify-center min-h-screen pt-16">
-        <h1 class="text-4xl font-bold text-white tracking-wider hover:scale-110 transition-transform duration-300">
-          RNGWars
-        </h1>
+      <div class="hero">
+        <h1 class="hero-title">RNGWars</h1>
       </div>
     </div>
   );

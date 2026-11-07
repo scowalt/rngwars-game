@@ -25,6 +25,16 @@ package versions and lockfile are retained; do not update them silently to resol
 The NuGet test project currently contains floating test-tool versions, so record resolved versions
 when investigating differences between machines.
 
+## Styling
+
+Both web apps use plain CSS with cascade layers and no CSS framework. Each global stylesheet
+declares `@layer theme, base, components;` once: `theme` holds design tokens as custom properties,
+`base` is a small reset, and `components` holds named semantic classes. The game client's styles
+live in `apps/frontend/src/styles/` and are imported by `src/index.css`; the marketing site's live
+in `apps/marketing_site/src/styles/global.css`. Add a semantic class rather than utility classes,
+and use plain conditional class names instead of a class-merging helper. Stylesheets fall under the
+comment policy, so record any rationale in documentation rather than CSS comments.
+
 ## A single-origin local game
 
 The API can serve a built game client. This avoids depending on the Vite configuration's legacy

@@ -76,10 +76,10 @@ const App: Component = () => {
       fallback={(err, reset) => {
         Sentry.captureException(err);
         return (
-          <div class="min-h-screen flex flex-col items-center justify-center gap-4">
-            <p class="text-xl text-red-400">Something went wrong.</p>
+          <div class="status-screen">
+            <p class="status-message">Something went wrong.</p>
             <button
-              class="px-4 py-2 bg-brand text-white rounded hover:opacity-90"
+              class="status-button"
               onClick={() => {
                 reset();
                 window.location.reload();
@@ -94,12 +94,9 @@ const App: Component = () => {
       <Show
         when={!startupFailed()}
         fallback={
-          <div class="min-h-screen flex flex-col items-center justify-center gap-4 px-6 text-center">
-            <p class="text-xl text-red-400">Unable to initialize your player profile.</p>
-            <button
-              class="px-4 py-2 bg-brand text-white rounded hover:opacity-90"
-              onClick={initialize}
-            >
+          <div class="status-screen startup-error">
+            <p class="status-message">Unable to initialize your player profile.</p>
+            <button class="status-button" onClick={initialize}>
               Retry
             </button>
           </div>
@@ -108,8 +105,8 @@ const App: Component = () => {
         <Show
           when={!authStore.loading()}
           fallback={
-            <div class="min-h-screen flex items-center justify-center">
-              <div class="animate-pulse text-xl text-gray-400">Loading...</div>
+            <div class="status-screen">
+              <div class="loading-text app-loading">Loading...</div>
             </div>
           }
         >

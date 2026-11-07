@@ -36,47 +36,49 @@ const Leaderboard: Component = () => {
   }
 
   return (
-    <div class="flex-1 flex flex-col items-center p-6 max-w-2xl mx-auto w-full">
-      <h2 class="text-2xl font-bold mb-6">Leaderboard</h2>
+    <div class="page-column">
+      <h2 class="page-title">Leaderboard</h2>
 
       <Show when={loading()}>
-        <div class="animate-pulse text-gray-400">Loading...</div>
+        <div class="loading-text">Loading...</div>
       </Show>
 
       <Show when={!loading() && entries().length === 0}>
-        <p class="text-gray-500">No ranked players yet. Play a match to get on the board!</p>
+        <p class="leaderboard-empty">No ranked players yet. Play a match to get on the board!</p>
       </Show>
 
       <Show when={!loading() && entries().length > 0}>
         {}
-        <div class="w-full grid grid-cols-[3rem_1fr_5rem_5rem_4rem] gap-2 px-4 py-2 text-xs text-gray-500 uppercase tracking-wider">
+        <div class="leaderboard-header">
           <div>#</div>
           <div>Player</div>
-          <div class="text-right">ELO</div>
-          <div class="text-right">W / L</div>
-          <div class="text-right">Win%</div>
+          <div class="leaderboard-numeric">ELO</div>
+          <div class="leaderboard-numeric">W / L</div>
+          <div class="leaderboard-numeric">Win%</div>
         </div>
 
-        <div class="w-full space-y-1">
+        <div class="leaderboard-list">
           <For each={entries()}>
             {(entry) => {
               const isMe = () => entry.userId === authStore.user()?.id;
               return (
                 <div
-                  class={`grid grid-cols-[3rem_1fr_5rem_5rem_4rem] gap-2 items-center px-4 py-3 rounded-lg border ${
-                    isMe() ? "bg-brand/10 border-brand/30" : "bg-gray-900 border-gray-800"
-                  }`}
+                  class={
+                    isMe()
+                      ? "list-row leaderboard-row leaderboard-row-me"
+                      : "list-row leaderboard-row"
+                  }
                 >
                   {}
-                  <div class="text-gray-500 font-mono text-sm">
+                  <div class="leaderboard-rank">
                     {entry.rank <= 3 ? (
                       <span
                         class={
                           entry.rank === 1
-                            ? "text-yellow-400"
+                            ? "medal-gold"
                             : entry.rank === 2
-                              ? "text-gray-300"
-                              : "text-amber-600"
+                              ? "medal-silver"
+                              : "medal-bronze"
                         }
                       >
                         {entry.rank === 1 ? "🥇" : entry.rank === 2 ? "🥈" : "🥉"}
@@ -87,29 +89,29 @@ const Leaderboard: Component = () => {
                   </div>
 
                   {}
-                  <div class="truncate">
-                    <span class={`font-semibold ${isMe() ? "text-brand" : ""}`}>
+                  <div class="leaderboard-player">
+                    <span
+                      class={isMe() ? "leaderboard-name leaderboard-name-me" : "leaderboard-name"}
+                    >
                       {entry.username}
                     </span>
                     <Show when={isMe()}>
-                      <span class="text-xs text-brand ml-1">(you)</span>
+                      <span class="leaderboard-you">(you)</span>
                     </Show>
                   </div>
 
                   {}
-                  <div class="text-right font-mono text-sm font-bold text-brand tabular-nums">
-                    {entry.rngScore}
+                  <div class="leaderboard-numeric leaderboard-elo">{entry.rngScore}</div>
+
+                  {}
+                  <div class="leaderboard-numeric leaderboard-record">
+                    <span class="record-wins">{entry.totalWins}</span>
+                    <span class="record-separator"> / </span>
+                    <span class="record-losses">{entry.totalLosses}</span>
                   </div>
 
                   {}
-                  <div class="text-right text-sm tabular-nums">
-                    <span class="text-green-400">{entry.totalWins}</span>
-                    <span class="text-gray-600"> / </span>
-                    <span class="text-red-400">{entry.totalLosses}</span>
-                  </div>
-
-                  {}
-                  <div class="text-right text-sm text-gray-400 tabular-nums">{winRate(entry)}</div>
+                  <div class="leaderboard-numeric leaderboard-win-rate">{winRate(entry)}</div>
                 </div>
               );
             }}
@@ -117,10 +119,7 @@ const Leaderboard: Component = () => {
         </div>
 
         <Show when={hasMore()}>
-          <button
-            onClick={loadMore}
-            class="mt-4 px-6 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg transition-colors"
-          >
+          <button onClick={loadMore} class="button button-secondary load-more">
             Load More
           </button>
         </Show>

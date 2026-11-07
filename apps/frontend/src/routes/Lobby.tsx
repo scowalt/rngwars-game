@@ -33,27 +33,27 @@ const Lobby: Component = () => {
   }
 
   return (
-    <div class="flex-1 flex flex-col items-center justify-center gap-8 p-6">
-      <div class="text-center">
-        <h1 class="text-5xl font-black text-brand mb-2">RNGWars</h1>
-        <p class="text-gray-500">May the RNG be ever in your favor</p>
+    <div class="stage lobby">
+      <div class="stage-panel">
+        <h1 class="lobby-title">RNGWars</h1>
+        <p class="lobby-tagline">May the RNG be ever in your favor</p>
       </div>
 
       <UsernameEditor />
       <PlayerStats />
 
-      <div class="flex flex-col gap-3 w-64">
+      <div class="lobby-actions">
         <button
           onClick={startPractice}
           disabled={!authStore.signalrConnected()}
-          class="w-full py-3 px-6 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg text-lg font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          class="button button-secondary lobby-action"
         >
           Practice
         </button>
         <button
           onClick={startMultiplayer}
           disabled={!authStore.signalrConnected()}
-          class="w-full py-3 px-6 bg-brand hover:bg-brand-light rounded-lg text-lg font-semibold transition-colors text-white disabled:opacity-40 disabled:cursor-not-allowed"
+          class="button button-primary lobby-action"
         >
           Multiplayer
         </button>

@@ -3,7 +3,7 @@
 A satirical multiplayer web game where the only skill is your random number.
 
 - **API:** F# / .NET 10, Giraffe, SignalR and SQLite.
-- **Game client:** SolidJS, Vite and Tailwind CSS.
+- **Game client:** SolidJS, Vite and plain layered CSS.
 - **Marketing site:** Astro and SolidJS.
 
 This tree is being prepared as the authoritative home for RNGWars development, CI and CD on GitHub

@@ -1,9 +1,8 @@
 import { defineConfig } from "vite";
 import solidPlugin from "vite-plugin-solid";
-import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [solidPlugin(), tailwindcss()],
+  plugins: [solidPlugin()],
   server: {
     port: 4001,
     host: "0.0.0.0",

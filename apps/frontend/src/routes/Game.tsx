@@ -50,56 +50,54 @@ const Game: Component = () => {
   });
 
   return (
-    <div class="flex-1 flex flex-col items-center justify-center p-6">
+    <div class="stage">
       {}
       <Show when={gameStore.state.phase === "connecting"}>
-        <div class="text-center">
-          <div class="animate-pulse text-6xl mb-6">⚔️</div>
-          <h2 class="text-2xl font-bold mb-2">Connecting...</h2>
-          <p class="text-gray-400">
-            vs <span class="text-brand font-semibold">{gameStore.state.opponentName}</span>
+        <div class="stage-panel">
+          <div class="stage-emoji stage-emoji-pulsing">⚔️</div>
+          <h2 class="game-heading">Connecting...</h2>
+          <p class="opponent-line">
+            vs <span class="opponent-name">{gameStore.state.opponentName}</span>
           </p>
         </div>
       </Show>
 
       {}
       <Show when={gameStore.state.phase === "countdown"}>
-        <div class="text-center">
-          <p class="text-gray-400 mb-2">
-            vs <span class="text-brand font-semibold">{gameStore.state.opponentName}</span>
+        <div class="stage-panel game-countdown">
+          <p class="opponent-line">
+            vs <span class="opponent-name">{gameStore.state.opponentName}</span>
           </p>
-          <div class="text-9xl font-black text-brand animate-pulse">
-            {gameStore.state.countdownValue}
-          </div>
+          <div class="countdown-value">{gameStore.state.countdownValue}</div>
         </div>
       </Show>
 
       {}
       <Show when={gameStore.state.phase === "rolling"}>
-        <div class="text-center">
-          <p class="text-gray-400 mb-6">
-            vs <span class="text-brand font-semibold">{gameStore.state.opponentName}</span>
+        <div class="stage-panel game-rolling">
+          <p class="opponent-line">
+            vs <span class="opponent-name">{gameStore.state.opponentName}</span>
           </p>
-          <div class="flex items-center justify-center gap-12">
+          <div class="roll-matchup">
             <RollDisplay label="You" value={playerRolling()} highlight={false} />
-            <div class="text-3xl font-bold text-gray-600">vs</div>
+            <div class="roll-versus">vs</div>
             <RollDisplay
               label={gameStore.state.opponentName ?? "Opponent"}
               value={opponentRolling()}
               highlight={false}
             />
           </div>
-          <p class="text-gray-500 mt-6 animate-pulse">Rolling...</p>
+          <p class="rolling-hint">Rolling...</p>
         </div>
       </Show>
 
       {}
       <Show when={gameStore.state.phase === "revealed"}>
-        <div class="text-center">
-          <p class="text-gray-400 mb-6">
-            vs <span class="text-brand font-semibold">{gameStore.state.opponentName}</span>
+        <div class="stage-panel game-revealed">
+          <p class="opponent-line">
+            vs <span class="opponent-name">{gameStore.state.opponentName}</span>
           </p>
-          <div class="flex items-center justify-center gap-12">
+          <div class="roll-matchup">
             <RollDisplay
               label="You"
               value={formatRoll(gameStore.state.playerRoll)}
@@ -109,7 +107,7 @@ const Game: Component = () => {
                 gameStore.state.playerRoll > gameStore.state.opponentRoll
               }
             />
-            <div class="text-3xl font-bold text-gray-600">vs</div>
+            <div class="roll-versus">vs</div>
             <RollDisplay
               label={gameStore.state.opponentName ?? "Opponent"}
               value={formatRoll(gameStore.state.opponentRoll)}
@@ -125,22 +123,24 @@ const Game: Component = () => {
 
       {}
       <Show when={gameStore.state.phase === "completed"}>
-        <div class="text-center">
-          <div class="text-6xl mb-4">{isWinner() ? "🏆" : "💀"}</div>
-          <h2 class={`text-4xl font-black mb-2 ${isWinner() ? "text-green-400" : "text-red-400"}`}>
+        <div class="stage-panel game-completed">
+          <div class="stage-emoji">{isWinner() ? "🏆" : "💀"}</div>
+          <h2
+            class={`result-heading ${isWinner() ? "result-heading-victory" : "result-heading-defeat"}`}
+          >
             {isWinner() ? "Victory!" : "Defeat"}
           </h2>
-          <p class="text-gray-400 mb-6">
-            vs <span class="text-brand font-semibold">{gameStore.state.opponentName}</span>
+          <p class="opponent-line">
+            vs <span class="opponent-name">{gameStore.state.opponentName}</span>
           </p>
 
-          <div class="flex items-center justify-center gap-12 mb-8">
+          <div class="roll-matchup">
             <RollDisplay
               label="You"
               value={formatRoll(gameStore.state.playerRoll)}
               highlight={isWinner()}
             />
-            <div class="text-3xl font-bold text-gray-600">vs</div>
+            <div class="roll-versus">vs</div>
             <RollDisplay
               label={gameStore.state.opponentName ?? "Opponent"}
               value={formatRoll(gameStore.state.opponentRoll)}
@@ -149,25 +149,22 @@ const Game: Component = () => {
           </div>
 
           <Show when={!gameStore.state.isPractice && gameStore.state.eloChange !== null}>
-            <div class="mb-6">
+            <div class="elo-summary">
               <span
-                class={`text-2xl font-bold ${(gameStore.state.eloChange ?? 0) >= 0 ? "text-green-400" : "text-red-400"}`}
+                class={`elo-change ${(gameStore.state.eloChange ?? 0) >= 0 ? "elo-change-gain" : "elo-change-loss"}`}
               >
                 {(gameStore.state.eloChange ?? 0) >= 0 ? "+" : ""}
                 {gameStore.state.eloChange}
               </span>
-              <span class="text-gray-500 ml-2">ELO ({gameStore.state.newElo})</span>
+              <span class="elo-total">ELO ({gameStore.state.newElo})</span>
             </div>
           </Show>
 
           <Show when={gameStore.state.isPractice}>
-            <p class="text-gray-500 mb-6 text-sm">Practice — no ELO change</p>
+            <p class="practice-note">Practice — no ELO change</p>
           </Show>
 
-          <button
-            onClick={playAgain}
-            class="px-8 py-3 bg-brand hover:bg-brand-light rounded-lg text-lg font-semibold transition-colors text-white"
-          >
+          <button onClick={playAgain} class="button button-primary button-large">
             Play Again
           </button>
         </div>
@@ -175,14 +172,11 @@ const Game: Component = () => {
 
       {}
       <Show when={gameStore.state.phase === "cancelled"}>
-        <div class="text-center">
-          <div class="text-6xl mb-4">❌</div>
-          <h2 class="text-2xl font-bold mb-2 text-red-400">Match Cancelled</h2>
-          <p class="text-gray-400 mb-6">{gameStore.state.errorMessage}</p>
-          <button
-            onClick={playAgain}
-            class="px-8 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-lg font-semibold transition-colors"
-          >
+        <div class="stage-panel">
+          <div class="stage-emoji">❌</div>
+          <h2 class="game-heading game-heading-cancelled">Match Cancelled</h2>
+          <p class="cancel-reason">{gameStore.state.errorMessage}</p>
+          <button onClick={playAgain} class="button button-muted button-large">
             Back to Lobby
           </button>
         </div>
@@ -193,11 +187,9 @@ const Game: Component = () => {
 
 function RollDisplay(props: { label: string; value: string; highlight: boolean }) {
   return (
-    <div class="flex flex-col items-center">
-      <span class="text-sm text-gray-500 mb-1">{props.label}</span>
-      <span
-        class={`text-5xl font-mono font-bold tabular-nums ${props.highlight ? "text-green-400" : "text-white"}`}
-      >
+    <div class="roll">
+      <span class="roll-label">{props.label}</span>
+      <span class={props.highlight ? "roll-value roll-value-winner" : "roll-value"}>
         {props.value}
       </span>
     </div>

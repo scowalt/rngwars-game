@@ -22,8 +22,6 @@ linked for verification; the package's actual license/notice files take preceden
 | [@solidjs/router](https://registry.npmjs.org/@solidjs%2frouter/0.16.3)        | 0.16.3   | MIT                                   |
 | [solid-js](https://registry.npmjs.org/solid-js/1.9.15)                        | 1.9.15   | MIT                                   |
 | [posthog-js](https://registry.npmjs.org/posthog-js/1.434.15)                  | 1.434.15 | Apache-2.0 AND MIT                    |
-| [@tailwindcss/vite](https://registry.npmjs.org/@tailwindcss%2fvite/4.3.3)     | 4.3.3    | MIT                                   |
-| [tailwindcss](https://registry.npmjs.org/tailwindcss/4.3.3)                   | 4.3.3    | MIT                                   |
 | [typescript](https://registry.npmjs.org/typescript/6.0.3)                     | 6.0.3    | Apache-2.0                            |
 | [vite](https://registry.npmjs.org/vite/8.3.1)                                 | 8.3.1    | MIT, with bundled third-party notices |
 | [vite-plugin-solid](https://registry.npmjs.org/vite-plugin-solid/2.11.14)     | 2.11.14  | MIT                                   |
