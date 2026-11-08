@@ -46,9 +46,13 @@ Three layers cover anonymous signup, and only the first two run in the portable 
 ## OAuth callback coverage
 
 `OAuthCallbackRouteTests` run the real route table in process with a synthetic provider handler in
-place of the HTTP client, so no test contacts an OAuth provider. They cover a successful account
-link, an unreachable provider and a rejected account link. Each failure must redirect to
-`/?auth_error=OAUTH_ERROR` with no exception, SQL or storage text in the response.
+place of the HTTP client and a synthetic clock, so no test contacts an OAuth provider or waits. They
+cover linking and merging an anonymous account and a sign-in without one. They also check that the
+anonymous token is absent from the provider URL, every redirect and every provider request. A
+callback without the flow cookie, with another flow's `state`, for another provider, after expiry
+or a second time is rejected before the provider is contacted. The session hand-off works once.
+Each failure must redirect to `/?auth_error=OAUTH_ERROR` with no exception, SQL or storage text in
+the response.
 
 ## HTTP fixtures are separate
 

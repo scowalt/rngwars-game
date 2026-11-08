@@ -35,6 +35,24 @@ in `apps/marketing_site/src/styles/global.css`. Add a semantic class rather than
 and use plain conditional class names instead of a class-merging helper. Stylesheets fall under the
 comment policy, so record any rationale in documentation rather than CSS comments.
 
+## OAuth sign-in
+
+The game client has no sign-in button yet. A client signs in through three same-origin requests.
+
+1. `POST /auth/{provider}` with the anonymous token, if any, in the `Authorization: Bearer` header.
+   The response is `{ "url": "<provider authorize URL>" }` and an HttpOnly flow cookie. Navigate the
+   browser to `url`.
+2. The provider redirects to `/auth/{provider}/callback`. The API accepts the callback only from
+   the browser that holds the flow cookie, with the matching `state`, within 10 minutes and once.
+   It then redirects to `/auth/success`, or to `/?auth_error=OAUTH_ERROR` on any failure.
+3. From `/auth/success`, `POST /auth/session` within one minute. The response has the same
+   `{ token, user }` shape as anonymous signup and clears the flow cookie.
+
+The anonymous token never appears in a URL. The flow cookie is `__Host-` prefixed, so it is always
+`Secure`. Browsers keep it over HTTPS and on `localhost`. A plain-HTTP origin on another host
+cannot complete sign-in. Pending flows are held in API memory, so a restart cancels them and the
+player signs in again.
+
 ## A single-origin local game
 
 The API can serve a built game client. This avoids depending on the Vite configuration's legacy
