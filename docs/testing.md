@@ -14,6 +14,18 @@ uv run --no-project --python 3.14 --with-requirements .comment-policy/requiremen
 uv run --no-project --python 3.14 --with-requirements .comment-policy/requirements.txt python -m unittest discover -s .comment-policy -p 'test_*.py'
 ```
 
+```sh
+bun run check:notices
+bun test scripts/tests/check_third_party_notices.test.ts
+```
+
+`check:notices` fails when a version in [third-party notices](../THIRD_PARTY_NOTICES.md) disagrees
+with `bun.lock`, the `.fsproj` package references or `.comment-policy/requirements.txt`, when a
+direct dependency has no row, or when a row has no direct dependency. Each drift message names the
+row to change and the value to use. It does not read `THIRD_PARTY_LICENSES.txt`, whose headers
+record the version a license text was copied from. Update that file only when a bump changes the
+license text itself.
+
 The comment-policy checker expects a Git checkout. See its [guide](../.comment-policy/README.md).
 Legal notices must be retained even where normal source comments are prohibited.
 

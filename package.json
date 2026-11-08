@@ -2,6 +2,7 @@
   "name": "rngwars",
   "private": true,
   "scripts": {
+    "check:notices": "bun scripts/check_third_party_notices.ts",
     "build:marketing": "bun run --cwd apps/marketing_site build",
     "prettier": "prettier",
     "prettier:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,css,md,yml,yaml}\"",

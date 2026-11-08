@@ -4,10 +4,11 @@ The intended development home is this repository, with reviewed branches/PRs and
 not maintain a parallel private development mirror or copy private operational history into a PR.
 
 Use Bun for JavaScript dependencies and preserve the lockfile unless the change intentionally
-updates dependencies. Keep functional changes separate from publication, deployment and
-infrastructure ownership changes. Follow [development](docs/development.md),
-[testing](docs/testing.md) and the [comment policy](.comment-policy/README.md). Required legal
-notices must be retained.
+updates dependencies. A dependency change also edits the matching row in
+[third-party notices](THIRD_PARTY_NOTICES.md); `bun run check:notices` names each row to fix. Keep
+functional changes separate from publication, deployment and infrastructure ownership changes.
+Follow [development](docs/development.md), [testing](docs/testing.md) and the
+[comment policy](.comment-policy/README.md). Required legal notices must be retained.
 
 Use standard Git worktrees if desired. The old fixed-port worktree helper scripts are deliberately
 not included: browser-accessible local servers must use Portless with private Tailscale sharing,

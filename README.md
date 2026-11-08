@@ -20,6 +20,7 @@ Use Bun rather than npm or Yarn. See [development](docs/development.md) for isol
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts
+bun run check:notices
 bun run --cwd apps/frontend test
 bun run --cwd apps/frontend build
 bun run --cwd apps/marketing_site check
