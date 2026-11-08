@@ -43,6 +43,13 @@ Three layers cover anonymous signup, and only the first two run in the portable 
 - `ApiHttpTests` repeat concurrent signup and a rejected insert over real HTTP. They are excluded
   from the portable command and hosted CI, as described below.
 
+## OAuth callback coverage
+
+`OAuthCallbackRouteTests` run the real route table in process with a synthetic provider handler in
+place of the HTTP client, so no test contacts an OAuth provider. They cover a successful account
+link, an unreachable provider and a rejected account link. Each failure must redirect to
+`/?auth_error=OAUTH_ERROR` with no exception, SQL or storage text in the response.
+
 ## HTTP fixtures are separate
 
 `ApiHttpTests` starts real temporary API processes through Portless/private Tailscale using an

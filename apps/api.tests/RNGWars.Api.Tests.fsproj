@@ -13,6 +13,7 @@
     <Compile Include="MatchAgentTests.fs" />
     <Compile Include="MatchmakingQueueTests.fs" />
     <Compile Include="AnonymousSignupRouteTests.fs" />
+    <Compile Include="OAuthCallbackRouteTests.fs" />
     <Compile Include="ApiHttpFixture.fs" />
     <Compile Include="ApiHttpTests.fs" />
   </ItemGroup>

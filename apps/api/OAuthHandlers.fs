@@ -43,8 +43,6 @@ module OAuthHandlers =
                   Scopes = "identify email" }
         ]
 
-    let private httpClient = new HttpClient()
-
     let private getCallbackUrl (ctx: HttpContext) (provider: string) =
         let scheme = if ctx.Request.IsHttps then "https" else "http"
         let host = ctx.Request.Host.ToString()
@@ -56,7 +54,7 @@ module OAuthHandlers =
           DisplayName: string option
           AvatarUrl: string option }
 
-    let private exchangeCodeForToken (config: OAuthConfig) (code: string) (redirectUri: string) =
+    let private exchangeCodeForToken (httpClient: HttpClient) (config: OAuthConfig) (code: string) (redirectUri: string) =
         task {
             let content =
                 new FormUrlEncodedContent(
@@ -76,7 +74,7 @@ module OAuthHandlers =
             return doc.RootElement.GetProperty("access_token").GetString()
         }
 
-    let private fetchUserInfo (provider: string) (config: OAuthConfig) (accessToken: string) =
+    let private fetchUserInfo (httpClient: HttpClient) (provider: string) (config: OAuthConfig) (accessToken: string) =
         task {
             use request = new HttpRequestMessage(HttpMethod.Get, config.UserInfoUrl)
             request.Headers.Authorization <- System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken)
@@ -192,25 +190,29 @@ module OAuthHandlers =
                         ctx.SetStatusCode 400
                         return! json { Error = { Code = "MISSING_CODE"; Message = "OAuth code not provided" } } next ctx
                     else
-                        try
-                            let redirectUri = getCallbackUrl ctx provider
-                            let! accessToken = exchangeCodeForToken config code redirectUri
-                            let! userInfo = fetchUserInfo provider config accessToken
+                        let! linked =
+                            task {
+                                try
+                                    let redirectUri = getCallbackUrl ctx provider
+                                    let httpClient = ctx.GetService<IHttpClientFactory>().CreateClient()
+                                    let! accessToken = exchangeCodeForToken httpClient config code redirectUri
+                                    let! userInfo = fetchUserInfo httpClient provider config accessToken
 
-                            let anonymousToken =
-                                match Guid.TryParse(state) with
-                                | true, _ -> Some state
-                                | _ -> None
+                                    let anonymousToken =
+                                        match Guid.TryParse(state) with
+                                        | true, _ -> Some state
+                                        | _ -> None
 
-                            let user = linkOrCreateUser provider userInfo anonymousToken
+                                    return Ok(linkOrCreateUser provider userInfo anonymousToken)
+                                with ex ->
+                                    SentrySdk.CaptureException(ex) |> ignore
+                                    return Error()
+                            }
 
-                            let frontendUrl =
-                                sprintf "/auth/success?token=%s" (Uri.EscapeDataString user.AnonymousId)
+                        match linked with
+                        | Ok user ->
+                            ctx.Response.Redirect(sprintf "/auth/success?token=%s" (Uri.EscapeDataString user.AnonymousId))
+                        | Error() -> ctx.Response.Redirect("/?auth_error=OAUTH_ERROR")
 
-                            ctx.Response.Redirect(frontendUrl)
-                            return! next ctx
-                        with ex ->
-                            SentrySdk.CaptureException(ex) |> ignore
-                            ctx.SetStatusCode 500
-                            return! json { Error = { Code = "OAUTH_ERROR"; Message = sprintf "OAuth failed: %s" ex.Message } } next ctx
+                        return! next ctx
             }
