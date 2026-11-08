@@ -30,7 +30,7 @@ linked for verification; the package's actual license/notice files take preceden
 | [@astrojs/solid-js](https://registry.npmjs.org/@astrojs%2fsolid-js/7.0.2)     | 7.0.2    | MIT                                   |
 | [astro](https://registry.npmjs.org/astro/7.3.5)                               | 7.3.5    | MIT, with bundled third-party notices |
 | [@astrojs/check](https://registry.npmjs.org/@astrojs%2fcheck/0.9.10)          | 0.9.10   | MIT                                   |
-| [wrangler](https://registry.npmjs.org/wrangler/4.141.0)                       | 4.141.0  | MIT OR Apache-2.0                     |
+| [wrangler](https://registry.npmjs.org/wrangler/4.158.0)                       | 4.158.0  | MIT OR Apache-2.0                     |
 | [lefthook](https://registry.npmjs.org/lefthook/2.1.14)                        | 2.1.14   | MIT                                   |
 | [markdownlint-cli](https://registry.npmjs.org/markdownlint-cli/0.49.1)        | 0.49.1   | MIT                                   |
 | [prettier](https://registry.npmjs.org/prettier/3.9.9)                         | 3.9.9    | MIT                                   |
