@@ -50,7 +50,9 @@ place of the HTTP client and a synthetic clock, so no test contacts an OAuth pro
 cover linking and merging an anonymous account and a sign-in without one. They also check that the
 anonymous token is absent from the provider URL, every redirect and every provider request. A
 callback without the flow cookie, with another flow's `state`, for another provider, after expiry
-or a second time is rejected before the provider is contacted. The session hand-off works once.
+or a second time is rejected before the provider is contacted, including a retry after the provider
+failed. The session hand-off works once, within a minute, and clears the flow cookie. Start refuses
+new flows while the pending-flow limit is reached and accepts them again once those flows expire.
 Each failure must redirect to `/?auth_error=OAUTH_ERROR` with no exception, SQL or storage text in
 the response.
 

@@ -49,9 +49,13 @@ The game client has no sign-in button yet. A client signs in through three same-
    `{ token, user }` shape as anonymous signup and clears the flow cookie.
 
 The anonymous token never appears in a URL. The flow cookie is `__Host-` prefixed, so it is always
-`Secure`. Browsers keep it over HTTPS and on `localhost`. A plain-HTTP origin on another host
-cannot complete sign-in. Pending flows are held in API memory, so a restart cancels them and the
-player signs in again.
+`Secure`. Browsers keep it over HTTPS, and Chromium and Firefox also keep it on plain-HTTP
+`localhost`. Other plain-HTTP origins cannot complete sign-in. The Vite development server proxies
+only `/api` and `/hubs`, so a client that uses it also needs an `/auth` proxy entry.
+
+Pending flows are held in API memory, so a restart cancels them and the player signs in again. At
+most 10,000 flows can be pending. When the limit is reached, `POST /auth/{provider}` returns 503
+`SIGN_IN_BUSY` until enough flows expire.
 
 ## A single-origin local game
 

@@ -130,6 +130,7 @@ module OAuthHandlers =
 
     let private callbackLifetime = TimeSpan.FromMinutes(10.0)
     let private sessionLifetime = TimeSpan.FromMinutes(1.0)
+    let private pendingFlowLimit = 10_000
 
     let private flows = ConcurrentDictionary<string, Flow * DateTimeOffset>()
 
@@ -148,13 +149,17 @@ module OAuthHandlers =
 
     let private beginFlow (ctx: HttpContext) provider anonymousUserId =
         let issuedAt = now ctx
-        for KeyValue(binding, ((_, expiresAt) as entry)) in flows do
-            if expiresAt <= issuedAt then
-                flows.TryRemove(KeyValuePair(binding, entry)) |> ignore
+        if flows.Count >= pendingFlowLimit then
+            for KeyValue(binding, ((_, expiresAt) as entry)) in flows do
+                if expiresAt <= issuedAt then
+                    flows.TryRemove(KeyValuePair(binding, entry)) |> ignore
 
-        let state = randomValue ()
-        storeFlow ctx (randomValue ()) (AwaitingCallback(provider, state, anonymousUserId)) callbackLifetime
-        state
+        if flows.Count >= pendingFlowLimit then
+            None
+        else
+            let state = randomValue ()
+            storeFlow ctx (randomValue ()) (AwaitingCallback(provider, state, anonymousUserId)) callbackLifetime
+            Some state
 
     let private tryTakeFlow (ctx: HttpContext) (accept: Flow -> 'a option) =
         match ctx.Request.Cookies.TryGetValue(FlowCookie) with
@@ -204,17 +209,20 @@ module OAuthHandlers =
                             |> Option.bind Database.getUserByToken
                             |> Option.map (fun user -> user.Id)
 
-                        let state = beginFlow ctx provider anonymousUserId
+                        match beginFlow ctx provider anonymousUserId with
+                        | None ->
+                            ctx.SetStatusCode 503
+                            return! json { Error = { Code = "SIGN_IN_BUSY"; Message = "Too many sign-ins in progress; try again shortly" } } next ctx
+                        | Some state ->
+                            let url =
+                                sprintf "%s?client_id=%s&redirect_uri=%s&scope=%s&state=%s&response_type=code"
+                                    config.AuthorizeUrl
+                                    (Uri.EscapeDataString config.ClientId)
+                                    (Uri.EscapeDataString redirectUri)
+                                    (Uri.EscapeDataString config.Scopes)
+                                    (Uri.EscapeDataString state)
 
-                        let url =
-                            sprintf "%s?client_id=%s&redirect_uri=%s&scope=%s&state=%s&response_type=code"
-                                config.AuthorizeUrl
-                                (Uri.EscapeDataString config.ClientId)
-                                (Uri.EscapeDataString redirectUri)
-                                (Uri.EscapeDataString config.Scopes)
-                                (Uri.EscapeDataString state)
-
-                        return! json { Url = url } next ctx
+                            return! json { Url = url } next ctx
             }
 
     let authCallback (provider: string) : HttpHandler =

@@ -280,6 +280,22 @@ type OAuthCallbackRouteTests() =
             })
 
     [<Fact>]
+    let ``callback that failed at the provider cannot be retried`` () =
+        withConfiguredGithub (fun path ->
+            task {
+                let server = Server(OAuthHarness.unreachable)
+                let! started, _, state = server.Start()
+                let! first = server.Callback(state, cookie = started.Cookie)
+                assertFailureRedirect first
+                let providerRequests = server.ProviderRequests.Length
+                Assert.NotEqual(0, providerRequests)
+                let! retried = server.Callback(state, cookie = started.Cookie)
+                assertFailureRedirect retried
+                Assert.Equal(providerRequests, server.ProviderRequests.Length)
+                Assert.Equal(0L, OAuthHarness.users path)
+            })
+
+    [<Fact>]
     let ``expired state is rejected before contacting the provider`` () =
         withConfiguredGithub (fun path ->
             task {
@@ -303,9 +319,45 @@ type OAuthCallbackRouteTests() =
                 Assert.Equal(401, anonymous.Status)
                 let! first = server.Send("POST", "/auth/session", cookie = started.Cookie)
                 Assert.Equal(200, first.Status)
+                let cleared = first.SetCookie |> List.exactlyOne
+                Assert.StartsWith(started.Cookie.Split('=')[0] + "=;", cleared)
+                for attribute in [ "expires=thu, 01 jan 1970"; "secure"; "path=/" ] do
+                    Assert.Contains(attribute, cleared.ToLowerInvariant())
                 let! second = server.Send("POST", "/auth/session", cookie = started.Cookie)
                 Assert.Equal(401, second.Status)
                 Assert.DoesNotContain(first.Json.GetProperty("token").GetString(), second.Body)
+            })
+
+    [<Fact>]
+    let ``session hand-off expires a minute after the callback`` () =
+        withConfiguredGithub (fun _ ->
+            task {
+                let server = Server(OAuthHarness.githubAccount)
+                let! started, _, state = server.Start()
+                let! callback = server.Callback(state, cookie = started.Cookie)
+                Assert.Equal("/auth/success", callback.Location)
+                server.Clock.Now <- server.Clock.Now.AddSeconds(61.0)
+                let! late = server.Send("POST", "/auth/session", cookie = started.Cookie)
+                Assert.Equal(401, late.Status)
+            })
+
+    [<Fact>]
+    let ``start refuses new flows while too many are pending and recovers once they expire`` () =
+        withConfiguredGithub (fun _ ->
+            task {
+                let server = Server(OAuthHarness.githubAccount)
+                let mutable refused = None
+                let mutable attempts = 0
+                while refused.IsNone && attempts < 20_000 do
+                    attempts <- attempts + 1
+                    let! reply = server.Send("POST", "/auth/github")
+                    if reply.Status <> 200 then refused <- Some reply
+                let busy = Option.get refused
+                Assert.Equal(503, busy.Status)
+                Assert.Empty(busy.SetCookie)
+                server.Clock.Now <- server.Clock.Now.AddMinutes(11.0)
+                let! _ = server.Start()
+                ()
             })
 
     [<Fact>]
