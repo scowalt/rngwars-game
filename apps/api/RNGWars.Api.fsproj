@@ -19,6 +19,7 @@
     <Compile Include="ApiHandlers.fs" />
     <Compile Include="OAuthHandlers.fs" />
     <Compile Include="Routes.fs" />
+    <Compile Include="CorsConfig.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

@@ -107,15 +107,7 @@ module Program =
         builder.Services.AddGiraffe() |> ignore
         builder.Services.AddHttpClient() |> ignore
 
-        builder.Services.AddCors(fun options ->
-            options.AddDefaultPolicy(fun policy ->
-                policy
-                    .WithOrigins("http://localhost:5173", "http://localhost:3000", "https://play.rngwars.com")
-                    .AllowAnyHeader()
-                    .AllowAnyMethod()
-                    .AllowCredentials()
-                |> ignore))
-        |> ignore
+        builder.Services.AddCors(CorsConfig.configure (builder.Environment.IsDevelopment())) |> ignore
 
         builder.Services.AddSignalR() |> ignore
 
