@@ -190,26 +190,29 @@ module OAuthHandlers =
                         ctx.SetStatusCode 400
                         return! json { Error = { Code = "MISSING_CODE"; Message = "OAuth code not provided" } } next ctx
                     else
-                        try
-                            let redirectUri = getCallbackUrl ctx provider
-                            let httpClient = ctx.GetService<IHttpClientFactory>().CreateClient()
-                            let! accessToken = exchangeCodeForToken httpClient config code redirectUri
-                            let! userInfo = fetchUserInfo httpClient provider config accessToken
+                        let! linked =
+                            task {
+                                try
+                                    let redirectUri = getCallbackUrl ctx provider
+                                    let httpClient = ctx.GetService<IHttpClientFactory>().CreateClient()
+                                    let! accessToken = exchangeCodeForToken httpClient config code redirectUri
+                                    let! userInfo = fetchUserInfo httpClient provider config accessToken
 
-                            let anonymousToken =
-                                match Guid.TryParse(state) with
-                                | true, _ -> Some state
-                                | _ -> None
+                                    let anonymousToken =
+                                        match Guid.TryParse(state) with
+                                        | true, _ -> Some state
+                                        | _ -> None
 
-                            let user = linkOrCreateUser provider userInfo anonymousToken
+                                    return Ok(linkOrCreateUser provider userInfo anonymousToken)
+                                with ex ->
+                                    SentrySdk.CaptureException(ex) |> ignore
+                                    return Error()
+                            }
 
-                            let frontendUrl =
-                                sprintf "/auth/success?token=%s" (Uri.EscapeDataString user.AnonymousId)
+                        match linked with
+                        | Ok user ->
+                            ctx.Response.Redirect(sprintf "/auth/success?token=%s" (Uri.EscapeDataString user.AnonymousId))
+                        | Error() -> ctx.Response.Redirect("/?auth_error=OAUTH_ERROR")
 
-                            ctx.Response.Redirect(frontendUrl)
-                            return! next ctx
-                        with ex ->
-                            SentrySdk.CaptureException(ex) |> ignore
-                            ctx.SetStatusCode 500
-                            return! json { Error = { Code = "OAUTH_ERROR"; Message = sprintf "OAuth failed: %s" ex.Message } } next ctx
+                        return! next ctx
             }
