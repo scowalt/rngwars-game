@@ -11,21 +11,7 @@ type DatabaseEnvironmentCollection() = class end
 
 [<Collection("Database environment")>]
 type DatabaseConfigurationTests() =
-    let withDatabase environment action =
-        let names = [ "ASPNETCORE_ENVIRONMENT"; "DOTNET_ENVIRONMENT"; "DATABASE_PATH" ]
-        let previous = names |> List.map Environment.GetEnvironmentVariable
-        let directory = Path.Combine(Path.GetTempPath(), "rngwars-database-" + Guid.NewGuid().ToString("N"))
-        let path = Path.Combine(directory, "game.db")
-        Directory.CreateDirectory(directory) |> ignore
-        try
-            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", environment)
-            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", null)
-            Environment.SetEnvironmentVariable("DATABASE_PATH", path)
-            action path
-        finally
-            List.zip names previous |> List.iter (fun (name, value) -> Environment.SetEnvironmentVariable(name, value))
-            SqliteConnection.ClearAllPools()
-            Directory.Delete(directory, true)
+    let withDatabase environment action = SyntheticDatabase.withDatabase environment action
 
     [<Theory>]
     [<InlineData(null)>]

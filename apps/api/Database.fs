@@ -163,7 +163,7 @@ module Database =
         |> Db.newCommand "SELECT * FROM users WHERE id = @id"
         |> Db.setParams [ "@id", SqlType.String id ]
         |> Db.querySingle readUser
-        |> Option.get
+        |> Option.defaultWith (fun () -> invalidOp "Anonymous user was not readable after insert.")
 
     let getUserByToken (token: string) : User option =
         use conn = createConnection ()

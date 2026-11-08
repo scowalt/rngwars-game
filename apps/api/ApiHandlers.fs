@@ -1,6 +1,7 @@
 namespace RNGWars
 
 open Microsoft.AspNetCore.Http
+open Sentry
 open Giraffe
 
 module ApiHandlers =
@@ -11,15 +12,33 @@ module ApiHandlers =
     let createAnonymousUser: HttpHandler =
         fun next ctx ->
             task {
-                let user = Database.createAnonymousUser ()
-                ctx.SetStatusCode 201
+                let created =
+                    try
+                        Ok(Database.createAnonymousUser ())
+                    with ex ->
+                        SentrySdk.CaptureException(ex) |> ignore
+                        Error()
 
-                return!
-                    json
-                        { Token = user.AnonymousId
-                          User = toUserResponse user }
-                        next
-                        ctx
+                match created with
+                | Ok user ->
+                    ctx.SetStatusCode 201
+
+                    return!
+                        json
+                            { Token = user.AnonymousId
+                              User = toUserResponse user }
+                            next
+                            ctx
+                | Error() ->
+                    ctx.SetStatusCode 500
+
+                    return!
+                        json
+                            { Error =
+                                { Code = "SIGNUP_FAILED"
+                                  Message = "Failed to create anonymous user" } }
+                            next
+                            ctx
             }
 
     let getMe: HttpHandler =

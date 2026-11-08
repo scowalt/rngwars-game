@@ -17,6 +17,20 @@ uv run --no-project --python 3.14 --with-requirements .comment-policy/requiremen
 The comment-policy checker expects a Git checkout. See its [guide](../.comment-policy/README.md).
 Legal notices must be retained even where normal source comments are prohibited.
 
+## Anonymous signup coverage
+
+Three layers cover anonymous signup, and only the first two run in the portable command.
+
+- `DatabaseTests` exercise `Database.createAnonymousUser` and `getUserByToken` directly.
+- `AnonymousSignupRouteTests` run the real Giraffe route table in process against a disposable
+  native SQLite file, with no listener. They cover the token roundtrip, 32 concurrent signups, and
+  the `SIGNUP_FAILED` response for a rejected insert, a row that vanishes before it is read, and
+  storage that disappeared. Fault cases use SQLite triggers on the synthetic database and check that
+  no token or storage detail reaches the response. The vanished-row case also checks that the insert
+  ran once and was not retried.
+- `ApiHttpTests` repeat concurrent signup and a rejected insert over real HTTP. They are excluded
+  from the portable command and hosted CI, as described below.
+
 ## HTTP fixtures are separate
 
 `ApiHttpTests` starts real temporary API processes through Portless/private Tailscale using an

@@ -108,3 +108,50 @@ module ApiHttpTests =
         Assert.Contains("SQLite Error 14", api.Logs)
         Assert.False(api.LocalDatabaseExists)
     }
+
+    [<Fact>]
+    let ``concurrent HTTP signups issue distinct identities with usable tokens`` () = task {
+        use api = new ApiHttpFixture()
+        let! ready = api.Start()
+        Assert.True(ready, "Isolated API failed startup (logs withheld).")
+        let count = 16
+        let! created =
+            System.Threading.Tasks.Task.WhenAll [|
+                for _ in 1..count ->
+                    task {
+                        use! signup = api.Request(HttpMethod.Post, "/api/users/anonymous")
+                        Assert.Equal(HttpStatusCode.Created, signup.StatusCode)
+                        use! body = json signup
+                        return body.RootElement.GetProperty("token").GetString(), body.RootElement.GetProperty("user").GetProperty("id").GetString()
+                    } |]
+        Assert.Equal(count, created |> Array.map fst |> Array.distinct |> Array.length)
+        Assert.Equal(count, created |> Array.map snd |> Array.distinct |> Array.length)
+        let! lookups =
+            System.Threading.Tasks.Task.WhenAll [|
+                for token, id in created ->
+                    task {
+                        use! profile = api.Request(HttpMethod.Get, "/api/users/me", token = token)
+                        Assert.Equal(HttpStatusCode.OK, profile.StatusCode)
+                        use! user = json profile
+                        return user.RootElement.GetProperty("id").GetString() = id
+                    } |]
+        Assert.All(lookups, fun matches -> Assert.True(matches))
+    }
+
+    [<Fact>]
+    let ``HTTP signup reports a rejected insert as a structured failure without a token`` () = task {
+        use api = new ApiHttpFixture()
+        let! ready = api.Start()
+        Assert.True(ready, "Isolated API failed startup (logs withheld).")
+        use connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={api.DatabasePath};Pooling=False")
+        connection.Open()
+        SyntheticDatabase.execute connection "CREATE TRIGGER synthetic_reject BEFORE INSERT ON users BEGIN SELECT RAISE(ABORT, 'synthetic-secret-detail'); END"
+        use! signup = api.Request(HttpMethod.Post, "/api/users/anonymous")
+        Assert.Equal(HttpStatusCode.InternalServerError, signup.StatusCode)
+        let! text = signup.Content.ReadAsStringAsync()
+        use body = JsonDocument.Parse(text)
+        Assert.Equal("SIGNUP_FAILED", body.RootElement.GetProperty("error").GetProperty("code").GetString())
+        Assert.False(body.RootElement.TryGetProperty("token") |> fst)
+        Assert.DoesNotContain("synthetic-secret-detail", text)
+        Assert.DoesNotContain(api.DatabasePath, text)
+    }
