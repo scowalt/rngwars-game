@@ -101,9 +101,11 @@ module Program =
         builder.WebHost.UseSentry(fun (o: Sentry.AspNetCore.SentryAspNetCoreOptions) ->
             o.Dsn <- System.Environment.GetEnvironmentVariable("SENTRY_DSN") |> Option.ofObj |> Option.defaultValue ""
             o.TracesSampleRate <- 0.0  
+            o.DisableSentryHttpMessageHandler <- true
         ) |> ignore
 
         builder.Services.AddGiraffe() |> ignore
+        builder.Services.AddHttpClient() |> ignore
 
         builder.Services.AddCors(fun options ->
             options.AddDefaultPolicy(fun policy ->
