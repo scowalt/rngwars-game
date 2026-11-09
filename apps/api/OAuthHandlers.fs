@@ -1,8 +1,11 @@
 namespace RNGWars
 
 open System
+open System.Buffers.Text
+open System.Collections.Concurrent
 open System.Collections.Generic
 open System.Net.Http
+open System.Security.Cryptography
 open System.Text.Json
 open Microsoft.AspNetCore.Http
 open Sentry
@@ -116,33 +119,76 @@ module OAuthHandlers =
             | _ -> return failwith "Unknown provider"
         }
 
-    let private linkOrCreateUser (provider: string) (info: OAuthUserInfo) (anonymousToken: string option) =
-        match Database.getUserByAuthId provider info.AuthId with
-        | Some existingUser ->
-            match anonymousToken with
-            | Some token ->
-                match Database.getUserByToken token with
-                | Some anonUser when anonUser.IsAnonymous && anonUser.Id <> existingUser.Id ->
-                    Database.mergeAnonymousIntoExisting anonUser.Id existingUser.Id
-                    |> Option.defaultValue existingUser
-                | _ -> existingUser
-            | None -> existingUser
+    type OAuthStartResponse = { Url: string }
 
-        | None ->
-            match anonymousToken with
-            | Some token ->
-                match Database.getUserByToken token with
-                | Some anonUser when anonUser.IsAnonymous ->
-                    Database.linkAnonymousToAuth anonUser.Id provider info.AuthId info.Email info.DisplayName info.AvatarUrl
-                    |> Option.defaultValue anonUser
-                | _ ->
-                    let user = Database.createAnonymousUser ()
-                    Database.linkAnonymousToAuth user.Id provider info.AuthId info.Email info.DisplayName info.AvatarUrl
-                    |> Option.defaultValue user
-            | None ->
-                let user = Database.createAnonymousUser ()
-                Database.linkAnonymousToAuth user.Id provider info.AuthId info.Email info.DisplayName info.AvatarUrl
-                |> Option.defaultValue user
+    type private Flow =
+        | AwaitingCallback of provider: string * state: string * anonymousUserId: string option
+        | AwaitingSession of token: string
+
+    [<Literal>]
+    let private FlowCookie = "__Host-rngwars_oauth"
+
+    let private callbackLifetime = TimeSpan.FromMinutes(10.0)
+    let private sessionLifetime = TimeSpan.FromMinutes(1.0)
+    let private pendingFlowLimit = 10_000
+
+    let private flows = ConcurrentDictionary<string, Flow * DateTimeOffset>()
+
+    let private randomValue () = Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32))
+
+    let private flowCookieOptions () =
+        CookieOptions(HttpOnly = true, Secure = true, SameSite = SameSiteMode.Lax, Path = "/")
+
+    let private now (ctx: HttpContext) = ctx.GetService<TimeProvider>().GetUtcNow()
+
+    let private storeFlow (ctx: HttpContext) binding flow (lifetime: TimeSpan) =
+        flows[binding] <- (flow, now ctx + lifetime)
+        let options = flowCookieOptions ()
+        options.MaxAge <- lifetime
+        ctx.Response.Cookies.Append(FlowCookie, binding, options)
+
+    let private beginFlow (ctx: HttpContext) provider anonymousUserId =
+        let issuedAt = now ctx
+        if flows.Count >= pendingFlowLimit then
+            for KeyValue(binding, ((_, expiresAt) as entry)) in flows do
+                if expiresAt <= issuedAt then
+                    flows.TryRemove(KeyValuePair(binding, entry)) |> ignore
+
+        if flows.Count >= pendingFlowLimit then
+            None
+        else
+            let state = randomValue ()
+            storeFlow ctx (randomValue ()) (AwaitingCallback(provider, state, anonymousUserId)) callbackLifetime
+            Some state
+
+    let private tryTakeFlow (ctx: HttpContext) (accept: Flow -> 'a option) =
+        match ctx.Request.Cookies.TryGetValue(FlowCookie) with
+        | true, binding ->
+            match flows.TryGetValue(binding) with
+            | true, ((flow, expiresAt) as entry) when now ctx < expiresAt ->
+                accept flow
+                |> Option.filter (fun _ -> flows.TryRemove(KeyValuePair(binding, entry)))
+                |> Option.map (fun accepted -> binding, accepted)
+            | _ -> None
+        | _ -> None
+
+    let private linkOrCreateUser (provider: string) (info: OAuthUserInfo) (anonymousUserId: string option) =
+        let anonymousUser =
+            anonymousUserId
+            |> Option.bind Database.getUserById
+            |> Option.filter (fun user -> user.IsAnonymous)
+
+        let link (user: User) =
+            Database.linkAnonymousToAuth user.Id provider info.AuthId info.Email info.DisplayName info.AvatarUrl
+            |> Option.defaultValue user
+
+        match Database.getUserByAuthId provider info.AuthId, anonymousUser with
+        | Some existingUser, Some anonUser when anonUser.Id <> existingUser.Id ->
+            Database.mergeAnonymousIntoExisting anonUser.Id existingUser.Id
+            |> Option.defaultValue existingUser
+        | Some existingUser, _ -> existingUser
+        | None, Some anonUser -> link anonUser
+        | None, None -> link (Database.createAnonymousUser ())
 
     let startAuth (provider: string) : HttpHandler =
         fun next ctx ->
@@ -158,20 +204,25 @@ module OAuthHandlers =
                         return! json { Error = { Code = "NOT_CONFIGURED"; Message = sprintf "%s OAuth is not configured" provider } } next ctx
                     else
                         let redirectUri = getCallbackUrl ctx provider
-                        let state =
-                            ctx.Request.Query["token"].ToString()
-                            |> fun t -> if String.IsNullOrEmpty(t) then Guid.NewGuid().ToString() else t
+                        let anonymousUserId =
+                            Auth.extractToken ctx
+                            |> Option.bind Database.getUserByToken
+                            |> Option.map (fun user -> user.Id)
 
-                        let url =
-                            sprintf "%s?client_id=%s&redirect_uri=%s&scope=%s&state=%s&response_type=code"
-                                config.AuthorizeUrl
-                                (Uri.EscapeDataString config.ClientId)
-                                (Uri.EscapeDataString redirectUri)
-                                (Uri.EscapeDataString config.Scopes)
-                                (Uri.EscapeDataString state)
+                        match beginFlow ctx provider anonymousUserId with
+                        | None ->
+                            ctx.SetStatusCode 503
+                            return! json { Error = { Code = "SIGN_IN_BUSY"; Message = "Too many sign-ins in progress; try again shortly" } } next ctx
+                        | Some state ->
+                            let url =
+                                sprintf "%s?client_id=%s&redirect_uri=%s&scope=%s&state=%s&response_type=code"
+                                    config.AuthorizeUrl
+                                    (Uri.EscapeDataString config.ClientId)
+                                    (Uri.EscapeDataString redirectUri)
+                                    (Uri.EscapeDataString config.Scopes)
+                                    (Uri.EscapeDataString state)
 
-                        ctx.Response.Redirect(url)
-                        return! next ctx
+                            return! json { Url = url } next ctx
             }
 
     let authCallback (provider: string) : HttpHandler =
@@ -190,29 +241,51 @@ module OAuthHandlers =
                         ctx.SetStatusCode 400
                         return! json { Error = { Code = "MISSING_CODE"; Message = "OAuth code not provided" } } next ctx
                     else
+                        let flow =
+                            tryTakeFlow ctx (function
+                                | AwaitingCallback(flowProvider, flowState, anonymousUserId) when flowProvider = provider && flowState = state ->
+                                    Some anonymousUserId
+                                | _ -> None)
+
                         let! linked =
                             task {
-                                try
-                                    let redirectUri = getCallbackUrl ctx provider
-                                    let httpClient = ctx.GetService<IHttpClientFactory>().CreateClient()
-                                    let! accessToken = exchangeCodeForToken httpClient config code redirectUri
-                                    let! userInfo = fetchUserInfo httpClient provider config accessToken
-
-                                    let anonymousToken =
-                                        match Guid.TryParse(state) with
-                                        | true, _ -> Some state
-                                        | _ -> None
-
-                                    return Ok(linkOrCreateUser provider userInfo anonymousToken)
-                                with ex ->
-                                    SentrySdk.CaptureException(ex) |> ignore
-                                    return Error()
+                                match flow with
+                                | None -> return Error()
+                                | Some(binding, anonymousUserId) ->
+                                    try
+                                        let redirectUri = getCallbackUrl ctx provider
+                                        let httpClient = ctx.GetService<IHttpClientFactory>().CreateClient()
+                                        let! accessToken = exchangeCodeForToken httpClient config code redirectUri
+                                        let! userInfo = fetchUserInfo httpClient provider config accessToken
+                                        return Ok(binding, linkOrCreateUser provider userInfo anonymousUserId)
+                                    with ex ->
+                                        SentrySdk.CaptureException(ex) |> ignore
+                                        return Error()
                             }
 
                         match linked with
-                        | Ok user ->
-                            ctx.Response.Redirect(sprintf "/auth/success?token=%s" (Uri.EscapeDataString user.AnonymousId))
+                        | Ok(binding, user) ->
+                            storeFlow ctx binding (AwaitingSession user.AnonymousId) sessionLifetime
+                            ctx.Response.Redirect("/auth/success")
                         | Error() -> ctx.Response.Redirect("/?auth_error=OAUTH_ERROR")
 
                         return! next ctx
+            }
+
+    let exchangeSession: HttpHandler =
+        fun next ctx ->
+            task {
+                let user =
+                    tryTakeFlow ctx (function
+                        | AwaitingSession token -> Some token
+                        | _ -> None)
+                    |> Option.bind (snd >> Database.getUserByToken)
+
+                match user with
+                | Some user ->
+                    ctx.Response.Cookies.Delete(FlowCookie, flowCookieOptions ())
+                    return! json { Token = user.AnonymousId; User = toUserResponse user } next ctx
+                | None ->
+                    ctx.SetStatusCode 401
+                    return! json { Error = { Code = "UNAUTHORIZED"; Message = "No completed sign-in for this browser" } } next ctx
             }

@@ -106,6 +106,7 @@ module Program =
 
         builder.Services.AddGiraffe() |> ignore
         builder.Services.AddHttpClient() |> ignore
+        builder.Services.AddSingleton(System.TimeProvider.System) |> ignore
 
         builder.Services.AddCors(fun options ->
             options.AddDefaultPolicy(fun policy ->

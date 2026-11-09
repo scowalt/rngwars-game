@@ -31,6 +31,7 @@ module Routes =
               GET
               >=> routef "/auth/%s/callback" (fun provider ->
                   OAuthHandlers.authCallback provider)
-              GET
+              POST >=> route "/auth/session" >=> OAuthHandlers.exchangeSession
+              POST
               >=> routef "/auth/%s" (fun provider ->
                   OAuthHandlers.startAuth provider) ]
