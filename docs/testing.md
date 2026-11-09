@@ -56,6 +56,15 @@ new flows while the pending-flow limit is reached and accepts them again once th
 Each failure must redirect to `/?auth_error=OAUTH_ERROR` with no exception, SQL or storage text in
 the response.
 
+## CORS coverage
+
+`CorsTests` build the real CORS policy from `CorsConfig` in process and read the
+`Access-Control-Allow-Origin` header it produces, on simple and preflight requests. Production
+allows only `https://play.rngwars.com`; the `localhost:5173` and `localhost:3000` development
+origins apply only when the environment is Development. The game client and the API share one
+origin and call it by relative URL, and the marketing site only links to the game, so neither relies
+on cross-origin access.
+
 ## HTTP fixtures are separate
 
 `ApiHttpTests` starts real temporary API processes through Portless/private Tailscale using an
