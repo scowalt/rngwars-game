@@ -31,7 +31,8 @@ class PrivatePreflightWorkflowTests(unittest.TestCase):
         self.assertNotIn("environment", resolve)
         self.assertNotIn("secrets.", str(resolve))
         self.assertIn("game_network.py automatic", str(resolve))
-        self.assertIn("game_release.py fetch", str(resolve))
+        release = next(step for step in resolve["steps"] if "game_release.py fetch" in step.get("run", ""))
+        self.assertEqual(release["env"], {"GAME_RELEASE_GITHUB_TOKEN": "${{ github.token }}"})
         self.assertIn("game-deployment-request-", str(resolve))
         private = jobs["deploy"]
         self.assertEqual(private["environment"], "game-production")

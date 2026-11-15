@@ -39,7 +39,17 @@ def execute(command, environment, limit=MAX_JSON):
 
 
 def github(path, environment):
-    return execute(["curl", "-q", "--proto", "=https", "--connect-timeout", "10", "--max-time", "30", "--max-filesize", str(MAX_JSON), "--fail", "--silent", "--show-error", "--request", "GET", "--header", "Accept: application/vnd.github+json", "https://api.github.com/repos/" + REPOSITORY + path], environment)
+    configuration = ["silent", "show-error", 'proto = "=https"', "connect-timeout = 10", "max-time = 30", "max-filesize = " + str(MAX_JSON), "url = " + json.dumps("https://api.github.com/repos/" + REPOSITORY + path), 'request = "GET"', 'write-out = "\\n%{http_code}"', 'header = "Accept: application/vnd.github+json"']
+    token = os.environ.get("GAME_RELEASE_GITHUB_TOKEN")
+    if token:
+        require(re.fullmatch(r"[A-Za-z0-9_]{1,255}", token), "release_github_token")
+        configuration.append("header = " + json.dumps("Authorization: Bearer " + token))
+    result = subprocess.run(["curl", "-q", "--config", "-"], input=("\n".join(configuration) + "\n").encode(), env=environment, capture_output=True, timeout=40)
+    require(result.returncode == 0 and len(result.stdout) <= MAX_JSON + 4, "release_github_transport")
+    body, separator, code = result.stdout.rpartition(b"\n")
+    require(separator and re.fullmatch(rb"[1-5][0-9]{2}", code), "release_github_status")
+    require(code == b"200" and body, "release_github_http_" + code.decode())
+    return json.loads(body, object_pairs_hook=unique_object)
 
 
 def verify(args):

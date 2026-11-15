@@ -23,7 +23,11 @@ from GitHub, and Sigstore trusted roots through the GitHub CLI's verified TUF fl
 - Genuine provenance with the exact trusted workflow, issuer, source/signer SHA, main ref, hosted
   runner, image subject and publication invocation.
 
-No GitHub or registry account credential is passed to child tools. Anonymous registry pull tokens
+No GitHub or registry account credential is passed to child tools. GitHub API reads are anonymous
+unless `GAME_RELEASE_GITHUB_TOKEN` is set. The deployment workflow sets it to the job's read-only
+`github.token`, because anonymous reads from hosted runners share a per-address rate limit with
+other jobs and intermittently fail. The token is sent only to `api.github.com`, through curl's
+standard input. It never reaches `gh`, the registry or the output. Anonymous registry pull tokens
 stay in memory/private stdin, never command arguments or output. Config blobs may use one HTTPS
 redirect to the fixed GitHub container CDN; registry authorization is not forwarded there. Arbitrary
 origins, redirects, external descriptors and existing output destinations are rejected. No image
@@ -49,8 +53,8 @@ The operator must establish the trusted-root file through a trusted installation
 host command must not accept an arbitrary trust root from a remote request. Both commands report
 `release_verified_not_deployment_approval`: release verification does not establish deployment
 review, host/storage identity, backup readiness or permission to alter a workload. `curl` and a
-GitHub CLI with offline attestation support are required. Anonymous provider rate limits fail
-closed.
+GitHub CLI with offline attestation support are required. A refused GitHub API read fails closed
+with `release_github_http_<status>`, such as `release_github_http_403` for an anonymous rate limit.
 
 ## Restricted SSH transport preparation
 
