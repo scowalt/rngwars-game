@@ -56,6 +56,16 @@ new flows while the pending-flow limit is reached and accepts them again once th
 Each failure must redirect to `/?auth_error=OAUTH_ERROR` with no exception, SQL or storage text in
 the response.
 
+## Proxy scheme coverage
+
+In production, Caddy terminates TLS and proxies to the API over plain HTTP from the Docker network,
+not from loopback. `ProxyHeadersConfig` trusts `X-Forwarded-Proto` from any source, so the API
+sees the client's `https` scheme. Compose publishes the API port only on host loopback for Caddy,
+and Caddy replaces any `X-Forwarded-Proto` header that the client sends. `ProxyHeadersRouteTests` send
+`POST /auth/github` over HTTP from a Docker gateway address through the forwarded-headers middleware
+and the real route table. With `X-Forwarded-Proto: https`, the provider `redirect_uri` uses
+`https`. Without the header, it keeps the connection's scheme.
+
 ## CORS coverage
 
 `CorsTests` build the real CORS policy from `CorsConfig` in process and read the

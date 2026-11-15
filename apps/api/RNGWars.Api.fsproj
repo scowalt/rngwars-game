@@ -20,6 +20,7 @@
     <Compile Include="OAuthHandlers.fs" />
     <Compile Include="Routes.fs" />
     <Compile Include="CorsConfig.fs" />
+    <Compile Include="ProxyHeadersConfig.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
