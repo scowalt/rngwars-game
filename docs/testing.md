@@ -53,6 +53,9 @@ callback without the flow cookie, with another flow's `state`, for another provi
 or a second time is rejected before the provider is contacted, including a retry after the provider
 failed. The session hand-off works once, within a minute, and clears the flow cookie. Start refuses
 new flows while the pending-flow limit is reached and accepts them again once those flows expire.
+One client address, or one IPv6 /64, may hold 20 pending flows. Its next start returns 429
+`TOO_MANY_SIGN_INS` while a start from another address still succeeds, so one client cannot fill
+the shared limit.
 Each failure must redirect to `/?auth_error=OAUTH_ERROR` with no exception, SQL or storage text in
 the response.
 
@@ -65,6 +68,14 @@ and Caddy replaces any `X-Forwarded-Proto` header that the client sends. `ProxyH
 `POST /auth/github` over HTTP from a Docker gateway address through the forwarded-headers middleware
 and the real route table. With `X-Forwarded-Proto: https`, the provider `redirect_uri` uses
 `https`. Without the header, it keeps the connection's scheme.
+
+Cloudflare proxies the game hostname to Caddy, so the connection address Caddy sees is a Cloudflare
+edge, not the player. The API takes the client address from the `CF-Connecting-IP` header that
+Cloudflare sets and Caddy passes through, and limits pending sign-ins per that address. The
+proxy-header tests check that two `CF-Connecting-IP` values arriving from one gateway address are
+limited separately. A request that reaches Caddy without passing through Cloudflare can set this
+header itself, so the per-client limit holds only while the origin accepts traffic from Cloudflare
+alone. The shared pending-flow limit still bounds memory either way.
 
 ## CORS coverage
 
