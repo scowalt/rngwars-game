@@ -4,7 +4,9 @@ open System
 open System.Buffers.Text
 open System.Collections.Concurrent
 open System.Collections.Generic
+open System.Net
 open System.Net.Http
+open System.Net.Sockets
 open System.Security.Cryptography
 open System.Text.Json
 open Microsoft.AspNetCore.Http
@@ -131,8 +133,19 @@ module OAuthHandlers =
     let private callbackLifetime = TimeSpan.FromMinutes(10.0)
     let private sessionLifetime = TimeSpan.FromMinutes(1.0)
     let private pendingFlowLimit = 10_000
+    let private pendingFlowsPerClient = 20
 
-    let private flows = ConcurrentDictionary<string, Flow * DateTimeOffset>()
+    type private PendingFlow =
+        { Flow: Flow
+          ExpiresAt: DateTimeOffset
+          Client: string }
+
+    type private FlowStart =
+        | Started of state: string
+        | ClientLimited
+        | Busy
+
+    let private flows = ConcurrentDictionary<string, PendingFlow>()
 
     let private randomValue () = Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32))
 
@@ -141,33 +154,49 @@ module OAuthHandlers =
 
     let private now (ctx: HttpContext) = ctx.GetService<TimeProvider>().GetUtcNow()
 
+    let private clientOf (ctx: HttpContext) =
+        match ctx.Connection.RemoteIpAddress with
+        | null -> ""
+        | address when address.IsIPv4MappedToIPv6 -> address.MapToIPv4().ToString()
+        | address when address.AddressFamily = AddressFamily.InterNetworkV6 ->
+            let subnet = address.GetAddressBytes()
+            Array.fill subnet 8 8 0uy
+            IPAddress(subnet).ToString() + "/64"
+        | address -> address.ToString()
+
     let private storeFlow (ctx: HttpContext) binding flow (lifetime: TimeSpan) =
-        flows[binding] <- (flow, now ctx + lifetime)
+        flows[binding] <- { Flow = flow; ExpiresAt = now ctx + lifetime; Client = clientOf ctx }
         let options = flowCookieOptions ()
         options.MaxAge <- lifetime
         ctx.Response.Cookies.Append(FlowCookie, binding, options)
 
     let private beginFlow (ctx: HttpContext) provider anonymousUserId =
         let issuedAt = now ctx
-        if flows.Count >= pendingFlowLimit then
-            for KeyValue(binding, ((_, expiresAt) as entry)) in flows do
-                if expiresAt <= issuedAt then
-                    flows.TryRemove(KeyValuePair(binding, entry)) |> ignore
+        let client = clientOf ctx
+        let pendingForClient =
+            flows |> Seq.filter (fun (KeyValue(_, pending)) -> pending.Client = client && issuedAt < pending.ExpiresAt) |> Seq.length
 
         if flows.Count >= pendingFlowLimit then
-            None
+            for KeyValue(binding, pending) in flows do
+                if pending.ExpiresAt <= issuedAt then
+                    flows.TryRemove(KeyValuePair(binding, pending)) |> ignore
+
+        if pendingForClient >= pendingFlowsPerClient then
+            ClientLimited
+        elif flows.Count >= pendingFlowLimit then
+            Busy
         else
             let state = randomValue ()
             storeFlow ctx (randomValue ()) (AwaitingCallback(provider, state, anonymousUserId)) callbackLifetime
-            Some state
+            Started state
 
     let private tryTakeFlow (ctx: HttpContext) (accept: Flow -> 'a option) =
         match ctx.Request.Cookies.TryGetValue(FlowCookie) with
         | true, binding ->
             match flows.TryGetValue(binding) with
-            | true, ((flow, expiresAt) as entry) when now ctx < expiresAt ->
-                accept flow
-                |> Option.filter (fun _ -> flows.TryRemove(KeyValuePair(binding, entry)))
+            | true, pending when now ctx < pending.ExpiresAt ->
+                accept pending.Flow
+                |> Option.filter (fun _ -> flows.TryRemove(KeyValuePair(binding, pending)))
                 |> Option.map (fun accepted -> binding, accepted)
             | _ -> None
         | _ -> None
@@ -210,10 +239,13 @@ module OAuthHandlers =
                             |> Option.map (fun user -> user.Id)
 
                         match beginFlow ctx provider anonymousUserId with
-                        | None ->
+                        | ClientLimited ->
+                            ctx.SetStatusCode 429
+                            return! json { Error = { Code = "TOO_MANY_SIGN_INS"; Message = "Too many sign-ins started from this network; try again later" } } next ctx
+                        | Busy ->
                             ctx.SetStatusCode 503
                             return! json { Error = { Code = "SIGN_IN_BUSY"; Message = "Too many sign-ins in progress; try again shortly" } } next ctx
-                        | Some state ->
+                        | Started state ->
                             let url =
                                 sprintf "%s?client_id=%s&redirect_uri=%s&scope=%s&state=%s&response_type=code"
                                     config.AuthorizeUrl

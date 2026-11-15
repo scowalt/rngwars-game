@@ -37,7 +37,14 @@ type private Reply =
 
     member this.Cookie = this.SetCookie |> List.head |> fun header -> header.Split(';')[0]
 
+module private SyntheticClients =
+    let numbered (prefix: byte) (n: int) =
+        IPAddress([| prefix; byte (n >>> 16); byte (n >>> 8); byte n |])
+
+    let random () = numbered 10uy (Random.Shared.Next(1 <<< 24))
+
 type private Server(respond: HttpRequestMessage -> HttpResponseMessage) =
+    let client = SyntheticClients.random ()
     let providerRequests = ResizeArray<string>()
     let locations = ResizeArray<string>()
     let clock = SyntheticClock()
@@ -59,8 +66,9 @@ type private Server(respond: HttpRequestMessage -> HttpResponseMessage) =
     member _.ProviderRequests = List.ofSeq providerRequests
     member _.Locations = List.ofSeq locations
 
-    member _.Send(httpMethod: string, target: string, ?cookie: string, ?bearer: string) = task {
+    member _.Send(httpMethod: string, target: string, ?cookie: string, ?bearer: string, ?from: IPAddress) = task {
         let context = DefaultHttpContext(RequestServices = services)
+        context.Connection.RemoteIpAddress <- defaultArg from client
         context.Request.Method <- httpMethod
         context.Request.Scheme <- "https"
         context.Request.Host <- HostString("game.example")
@@ -350,14 +358,52 @@ type OAuthCallbackRouteTests() =
                 let mutable attempts = 0
                 while refused.IsNone && attempts < 20_000 do
                     attempts <- attempts + 1
-                    let! reply = server.Send("POST", "/auth/github")
+                    let! reply = server.Send("POST", "/auth/github", from = SyntheticClients.numbered 172uy attempts)
                     if reply.Status <> 200 then refused <- Some reply
                 let busy = Option.get refused
                 Assert.Equal(503, busy.Status)
+                Assert.Equal("SIGN_IN_BUSY", busy.Json.GetProperty("error").GetProperty("code").GetString())
                 Assert.Empty(busy.SetCookie)
                 server.Clock.Now <- server.Clock.Now.AddMinutes(11.0)
                 let! _ = server.Start()
                 ()
+            })
+
+    [<Fact>]
+    let ``one client cannot hold sign-in busy while another client starts one`` () =
+        withConfiguredGithub (fun _ ->
+            task {
+                let server = Server(OAuthHarness.githubAccount)
+                let flooder = IPAddress.Parse("198.51.100.7")
+                let mutable accepted = 0
+                let mutable refused = None
+                while refused.IsNone && accepted < 10_000 do
+                    let! reply = server.Send("POST", "/auth/github", from = flooder)
+                    if reply.Status = 200 then accepted <- accepted + 1 else refused <- Some reply
+                Assert.Equal(20, accepted)
+                let limited = Option.get refused
+                Assert.Equal(429, limited.Status)
+                Assert.Equal("TOO_MANY_SIGN_INS", limited.Json.GetProperty("error").GetProperty("code").GetString())
+                Assert.Empty(limited.SetCookie)
+                let! other = server.Send("POST", "/auth/github", from = IPAddress.Parse("203.0.113.9"))
+                Assert.Equal(200, other.Status)
+                server.Clock.Now <- server.Clock.Now.AddMinutes(11.0)
+                let! recovered = server.Send("POST", "/auth/github", from = flooder)
+                Assert.Equal(200, recovered.Status)
+            })
+
+    [<Fact>]
+    let ``addresses in one IPv6 /64 share a sign-in limit`` () =
+        withConfiguredGithub (fun _ ->
+            task {
+                let server = Server(OAuthHarness.githubAccount)
+                for host in 1 .. 20 do
+                    let! reply = server.Send("POST", "/auth/github", from = IPAddress.Parse(sprintf "2001:db8:1:2::%x" host))
+                    Assert.Equal(200, reply.Status)
+                let! sameSubnet = server.Send("POST", "/auth/github", from = IPAddress.Parse("2001:db8:1:2:aaaa:bbbb:cccc:dddd"))
+                Assert.Equal(429, sameSubnet.Status)
+                let! otherSubnet = server.Send("POST", "/auth/github", from = IPAddress.Parse("2001:db8:1:3::1"))
+                Assert.Equal(200, otherSubnet.Status)
             })
 
     [<Fact>]

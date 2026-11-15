@@ -19,7 +19,7 @@ open Xunit
 module private ProxyHarness =
     let dockerGateway = IPAddress.Parse("172.17.0.1")
 
-    let startRedirectUri (forwardedProto: string option) = task {
+    let start (forwardedProto: string option) (connectingIp: string option) = task {
         let services = ServiceCollection().AddGiraffe()
         services.AddHttpClient() |> ignore
         services.AddSingleton(TimeProvider.System) |> ignore
@@ -37,11 +37,17 @@ module private ProxyHarness =
         context.Request.Host <- HostString("game.example")
         context.Request.Path <- PathString("/auth/github")
         forwardedProto |> Option.iter (fun value -> context.Request.Headers["X-Forwarded-Proto"] <- value)
+        connectingIp |> Option.iter (fun value -> context.Request.Headers["CF-Connecting-IP"] <- value)
         use body = new MemoryStream()
         context.Response.Body <- body
         do! pipeline.Invoke(context)
-        Assert.Equal(200, context.Response.StatusCode)
-        let authorizeUrl = JsonDocument.Parse(body.ToArray()).RootElement.GetProperty("url").GetString()
+        return context.Response.StatusCode, body.ToArray()
+    }
+
+    let startRedirectUri (forwardedProto: string option) = task {
+        let! status, body = start forwardedProto None
+        Assert.Equal(200, status)
+        let authorizeUrl = JsonDocument.Parse(body).RootElement.GetProperty("url").GetString()
         let query = QueryHelpers.ParseQuery(Uri(authorizeUrl).Query)
         return query["redirect_uri"].ToString()
     }
@@ -72,4 +78,18 @@ type ProxyHeadersRouteTests() =
             task {
                 let! redirectUri = ProxyHarness.startRedirectUri None
                 Assert.Equal("http://game.example/auth/github/callback", redirectUri)
+            })
+
+    [<Fact>]
+    let ``start limits sign-ins per Cloudflare client address rather than per proxy address`` () =
+        withConfiguredGithub (fun () ->
+            task {
+                let flooder = Some "198.51.100.23"
+                for _ in 1 .. 20 do
+                    let! status, _ = ProxyHarness.start (Some "https") flooder
+                    Assert.Equal(200, status)
+                let! limited, _ = ProxyHarness.start (Some "https") flooder
+                Assert.Equal(429, limited)
+                let! other, _ = ProxyHarness.start (Some "https") (Some "203.0.113.24")
+                Assert.Equal(200, other)
             })
