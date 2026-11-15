@@ -76,6 +76,14 @@ workflow/CI contract or incompatible controller changes still need reviewed inst
 updates. Version1 is a separately validated legacy manual-review contract, not an automatic
 fallback.
 
+[`host-authority-pins.json`](../ops/production/game-deployment/host-authority-pins.json) records
+the `workflow_blob` and `ci_blob` values that the host policy pins. `test_host_authority_pins`
+fails when either workflow changes. Its message names the blob that the host must pin next. A
+merged workflow change without a host pin update stops every automatic deploy with
+`request_controller_contract` in the host updater's journal. CI shows that refusal only as
+`private_deployment_outcome_unconfirmed`. Review the workflow change, update `authority.json` on
+the host, then update the pin file.
+
 The updater checks backup readiness **before reserving an attempt or mutating anything**. An active
 backup or approaching backup window returns `deployment_deferred` with a bounded wait interval. The
 caller may wait and recheck authority only for that explicit read-only response. It never retries a
