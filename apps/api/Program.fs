@@ -109,6 +109,7 @@ module Program =
         builder.Services.AddSingleton(System.TimeProvider.System) |> ignore
 
         builder.Services.AddCors(CorsConfig.configure (builder.Environment.IsDevelopment())) |> ignore
+        builder.Services.Configure<ForwardedHeadersOptions>(ProxyHeadersConfig.configure) |> ignore
 
         builder.Services.AddSignalR() |> ignore
 
@@ -120,6 +121,7 @@ module Program =
 
         MatchManager.startCleanup ()
 
+        app.UseForwardedHeaders() |> ignore
         app.UseCors() |> ignore
         app.UseRouting() |> ignore
 

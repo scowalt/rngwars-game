@@ -15,6 +15,7 @@
     <Compile Include="AnonymousSignupRouteTests.fs" />
     <Compile Include="OAuthCallbackRouteTests.fs" />
     <Compile Include="CorsTests.fs" />
+    <Compile Include="ProxyHeadersRouteTests.fs" />
     <Compile Include="ApiHttpFixture.fs" />
     <Compile Include="ApiHttpTests.fs" />
   </ItemGroup>
