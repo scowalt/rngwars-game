@@ -17,6 +17,41 @@ IMAGE = "ghcr.io/scowalt/rngwars-game-releases"
 REPOSITORY = "scowalt/rngwars-game"
 
 
+FAKE_CURL = r"""import json,os,sys
+from pathlib import Path
+root=Path(__file__).parent
+assert not any(k in os.environ for k in ['GH_TOKEN','GITHUB_TOKEN','GAME_RELEASE_GITHUB_TOKEN','AWS_SECRET_ACCESS_KEY'])
+assert sys.argv[1:]==['-q','--config','-']
+lines=sys.stdin.read().splitlines()
+url=json.loads(next(line.split(' = ',1)[1] for line in lines if line.startswith('url = ')))
+authorization=[json.loads(line.split(' = ',1)[1]) for line in lines if line.startswith('header = ') and 'Authorization:' in line]
+if url.startswith('https://api.github.com/'):
+ with (root/'github-authorization').open('a') as stream: stream.write(json.dumps(authorization)+'\n')
+ status=(root/'github-status').read_text() if (root/'github-status').exists() else '200'
+ if '/attestations/' in url: body=json.dumps({'attestations':[{'bundle':{'synthetic_bundle':True}}]}).encode()
+ else:
+  if (root/'replace-manifest').exists(): (root/'manifest.json').write_bytes(b'changed after inspection')
+  assert url.startswith('https://api.github.com/repos/scowalt/rngwars-game/actions/runs/77')
+  name='jobs.json' if url.endswith('/attempts/1/jobs?per_page=100') else 'run.json'
+  assert name=='jobs.json' or url.endswith('/runs/77')
+  body=(root/name).read_bytes()
+ sys.stdout.buffer.write(body+b'\n'+status.encode()); raise SystemExit(0)
+assert not any('synthetic_release_read_token' in line for line in lines), 'release read token sent outside the GitHub API'
+if '/blobs/' in url and (root/'redirect').exists():
+ header=json.loads(next(line.split(' = ',1)[1] for line in lines if line.startswith('dump-header = ')))
+ Path(header).write_text('HTTP/1.1 307 Temporary Redirect\r\nLocation: '+(root/'redirect').read_text()+'\r\n\r\n')
+ sys.stdout.buffer.write(b'\n307'); raise SystemExit(0)
+if url.startswith('https://pkg-containers.githubusercontent.com/'):
+ assert not authorization; body=(root/'config.json').read_bytes()
+elif url.startswith('https://ghcr.io/token?'):
+ assert 'push' not in url; body=b'{"token":"synthetic-public-pull"}'
+elif '/manifests/' in url: body=(root/'manifest.json').read_bytes()
+elif '/blobs/' in url: body=(root/'config.json').read_bytes()
+else: raise SystemExit(1)
+sys.stdout.buffer.write(body+b'\n200')
+"""
+
+
 class ReleaseVerificationCLITests(unittest.TestCase):
     def setUp(self):
         self.area = tempfile.TemporaryDirectory()
@@ -34,7 +69,7 @@ class ReleaseVerificationCLITests(unittest.TestCase):
         self.run = {"id": 77, "repository": {"id": 1442331254}, "head_repository": {"id": 1442331254}, "head_sha": REVISION, "head_branch": "main", "path": ".github/workflows/game-publication.yml", "event": "workflow_dispatch", "run_attempt": 1, "status": "completed", "conclusion": "success", "actor": {"id": 1100550}, "triggering_actor": {"id": 1100550}}
         self.jobs = {"total_count": 4, "jobs": [{"name": name, "run_id": 77, "status": "completed", "conclusion": "success", "labels": ["ubuntu-24.04-arm" if name == "Build and exercise native image" else "ubuntu-24.04"]} for name in ["resolve", "Build and exercise native image", "prepare", "publish"]]}
         curl = self.root / "curl"
-        curl.write_text("#!" + sys.executable + "\nimport json,os,sys\nfrom pathlib import Path\nroot=Path(__file__).parent\nassert not any(k in os.environ for k in ['GH_TOKEN','GITHUB_TOKEN','AWS_SECRET_ACCESS_KEY'])\nassert '-q' in sys.argv and '--location' not in sys.argv\nurl=sys.argv[-1]\nif url=='-':\n lines=sys.stdin.read().splitlines(); url=json.loads(next(line.split(' = ',1)[1] for line in lines if line.startswith('url = ')))\n if '/blobs/' in url and (root/'redirect').exists():\n  header=json.loads(next(line.split(' = ',1)[1] for line in lines if line.startswith('dump-header = ')))\n  Path(header).write_text('HTTP/1.1 307 Temporary Redirect\\r\\nLocation: '+(root/'redirect').read_text()+'\\r\\n\\r\\n')\n  sys.stdout.buffer.write(b'\\n307'); raise SystemExit(0)\n if url.startswith('https://pkg-containers.githubusercontent.com/'):\n  assert not any('Authorization:' in line for line in lines); body=(root/'config.json').read_bytes()\n elif url.startswith('https://ghcr.io/token?'):\n  assert 'push' not in url; body=b'{\"token\":\"synthetic-public-pull\"}'\n elif '/manifests/' in url: body=(root/'manifest.json').read_bytes()\n elif '/blobs/' in url: body=(root/'config.json').read_bytes()\n else: raise SystemExit(1)\n sys.stdout.buffer.write(body+b'\\n200'); raise SystemExit(0)\nif '/attestations/' in url:\n print(json.dumps({'attestations':[{'bundle':{'synthetic_bundle':True}}]})); raise SystemExit(0)\nif (root/'replace-manifest').exists(): (root/'manifest.json').write_bytes(b'changed after inspection')\nassert url.startswith('https://api.github.com/repos/scowalt/rngwars-game/actions/runs/77')\nname='jobs.json' if url.endswith('/attempts/1/jobs?per_page=100') else 'run.json'\nassert name=='jobs.json' or url.endswith('/runs/77')\nprint((root/name).read_text())\n")
+        curl.write_text("#!" + sys.executable + "\n" + FAKE_CURL)
         curl.chmod(0o700)
         gh = self.root / "gh"
         gh.write_text("#!" + sys.executable + "\nimport hashlib,json,os,sys\nfrom pathlib import Path\nroot=Path(__file__).parent\nargs=sys.argv[1:]\nif args==['attestation','trusted-root']:\n print((root/'trusted-root.jsonl').read_text()); raise SystemExit(0)\nassert args[:2]==['attestation','verify']\nassert not any(k in os.environ for k in ['GH_TOKEN','GITHUB_TOKEN','AWS_SECRET_ACCESS_KEY'])\nassert os.environ['HOME']!=str(root) and os.environ['GH_CONFIG_DIR']==os.environ['HOME']\nexpected={'--repo':'scowalt/rngwars-game','--cert-identity':'https://github.com/scowalt/rngwars-game/.github/workflows/game-publication.yml@refs/heads/main','--cert-oidc-issuer':'https://token.actions.githubusercontent.com','--signer-digest':'" + REVISION + "','--source-digest':'" + REVISION + "','--source-ref':'refs/heads/main','--predicate-type':'https://slsa.dev/provenance/v1'}\nassert all(args[args.index(k)+1]==v for k,v in expected.items())\nassert '--deny-self-hosted-runners' in args and '--bundle' in args and '--custom-trusted-root' in args\nassert hashlib.sha256(Path(args[2]).read_bytes()).hexdigest()==json.loads((root/'statement.json').read_text())['subject'][0]['digest']['sha256']\nprint(json.dumps([{'verificationResult':{'statement':json.loads((root/'statement.json').read_text())}}]))\n")
@@ -227,6 +262,27 @@ class ReleaseVerificationCLITests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("release_registry_", result.stderr)
                 self.assertFalse((self.root / "fetched").exists())
+
+    def test_sends_the_release_read_token_only_to_the_GitHub_API(self):
+        self.environment["GAME_RELEASE_GITHUB_TOKEN"] = "synthetic_release_read_token"
+        result = self.invoke("fetch")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("synthetic_release_read_token", result.stdout + result.stderr)
+        requests = [json.loads(line) for line in (self.root / "github-authorization").read_text().splitlines()]
+        self.assertEqual(requests, [["Authorization: Bearer synthetic_release_read_token"]] * 3)
+
+    def test_reads_the_GitHub_API_anonymously_without_a_release_read_token(self):
+        result = self.invoke("fetch")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        requests = [json.loads(line) for line in (self.root / "github-authorization").read_text().splitlines()]
+        self.assertEqual(requests, [[]] * 3)
+
+    def test_names_the_GitHub_API_status_when_a_read_is_refused(self):
+        (self.root / "github-status").write_text("403")
+        result = self.invoke("fetch")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release_github_http_403", result.stderr)
+        self.assertFalse((self.root / "fetched").exists())
 
     def test_verifies_an_automatic_publisher_with_the_same_genuine_source_and_invocation(self):
         self.run["event"] = "workflow_run"

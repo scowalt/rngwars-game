@@ -87,8 +87,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/game_network.py resolve
-      - name: Fetch and verify the exact public release without account credentials
+      - name: Fetch and verify the exact public release with the job's read-only token
         if: github.event_name == 'workflow_dispatch' || steps.automatic.outputs.eligible == 'true'
+        env:
+          GAME_RELEASE_GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -eu
           python3 scripts/game_release.py fetch "$RUNNER_TEMP/game-private-evidence" \
