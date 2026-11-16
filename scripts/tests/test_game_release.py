@@ -271,6 +271,21 @@ class ReleaseVerificationCLITests(unittest.TestCase):
         requests = [json.loads(line) for line in (self.root / "github-authorization").read_text().splitlines()]
         self.assertEqual(requests, [["Authorization: Bearer synthetic_release_read_token"]] * 3)
 
+    def test_accepts_any_visible_ASCII_token_and_rejects_header_injection(self):
+        token = "ghs_" + "synthetic_release_read_token." * 20 + "-AZ09"
+        self.environment["GAME_RELEASE_GITHUB_TOKEN"] = token
+        result = self.invoke("fetch")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        requests = [json.loads(line) for line in (self.root / "github-authorization").read_text().splitlines()]
+        self.assertEqual(requests, [["Authorization: Bearer " + token]] * 3)
+        for injected in ["ghs_synthetic\nX-Injected: 1", "ghs_synthetic token", "ghs_synthetic\x7f"]:
+            with self.subTest(injected=injected):
+                self.environment["GAME_RELEASE_GITHUB_TOKEN"] = injected
+                (self.root / "github-authorization").unlink(missing_ok=True)
+                result = subprocess.run([sys.executable, str(TOOL), "fetch", str(self.root / "refused"), "--revision", REVISION, "--digest", self.digest, "--publication-run", "77"], env=self.environment, capture_output=True, text=True, timeout=15)
+                self.assertIn("release_github_token", result.stderr)
+                self.assertFalse((self.root / "github-authorization").exists())
+
     def test_reads_the_GitHub_API_anonymously_without_a_release_read_token(self):
         result = self.invoke("fetch")
         self.assertEqual(result.returncode, 0, result.stderr)
