@@ -42,7 +42,7 @@ def github(path, environment):
     configuration = ["silent", "show-error", 'proto = "=https"', "connect-timeout = 10", "max-time = 30", "max-filesize = " + str(MAX_JSON), "url = " + json.dumps("https://api.github.com/repos/" + REPOSITORY + path), 'request = "GET"', 'write-out = "\\n%{http_code}"', 'header = "Accept: application/vnd.github+json"']
     token = os.environ.get("GAME_RELEASE_GITHUB_TOKEN")
     if token:
-        require(re.fullmatch(r"[A-Za-z0-9_]{1,255}", token), "release_github_token")
+        require(re.fullmatch(r"[\x21-\x7e]{1,4096}", token), "release_github_token")
         configuration.append("header = " + json.dumps("Authorization: Bearer " + token))
     result = subprocess.run(["curl", "-q", "--config", "-"], input=("\n".join(configuration) + "\n").encode(), env=environment, capture_output=True, timeout=40)
     require(result.returncode == 0 and len(result.stdout) <= MAX_JSON + 4, "release_github_transport")
