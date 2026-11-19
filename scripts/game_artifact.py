@@ -42,7 +42,7 @@ def inspect(path, revision):
             require(type(descriptor) is dict and {"mediaType", "digest", "size"} <= set(descriptor) <= {"mediaType", "digest", "size", "annotations", "platform"}, "OCI_descriptor_fields")
             require(type(descriptor["size"]) is int and 0 < descriptor["size"] <= MAX_ARCHIVE, "OCI_descriptor_size")
             if "platform" in descriptor:
-                require(descriptor["platform"].get("os") == "linux" and descriptor["platform"].get("architecture") == "arm64", "OCI_descriptor_platform")
+                require(descriptor["platform"].get("os") == "linux" and descriptor["platform"].get("architecture") == "amd64", "OCI_descriptor_platform")
             require(descriptor["mediaType"] == MEDIA + media and re.fullmatch(r"sha256:[a-f0-9]{64}", descriptor["digest"]), "OCI_descriptor")
             name = "blobs/sha256/" + descriptor["digest"].split(":")[1]
             entry = entries[name]
@@ -63,7 +63,7 @@ def inspect(path, revision):
         manifest = document(blob(selected, "manifest.v1+json"))
         require(manifest["schemaVersion"] == 2 and manifest["mediaType"] == MEDIA + "manifest.v1+json", "OCI_manifest")
         config = document(blob(manifest["config"], "config.v1+json"))
-        require(config["os"] == "linux" and config["architecture"] == "arm64", "native_ARM64_image_required")
+        require(config["os"] == "linux" and config["architecture"] == "amd64", "native_AMD64_image_required")
         runtime = config["config"]
         require(runtime["User"] == "10001:10001" and runtime["Entrypoint"] == ["/app/game-entrypoint.sh"] and runtime["Cmd"] == ["dotnet", "RNGWars.Api.dll"], "game_runtime_identity")
         require(runtime["Labels"]["org.opencontainers.image.revision"] == revision and runtime["Labels"]["org.opencontainers.image.source"] == "https://github.com/" + REPOSITORY, "image_source_binding")
@@ -75,14 +75,14 @@ def inspect(path, revision):
         require(set(entries) == used, "unexpected_OCI_payload")
     with path.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    return {"status": "OCI_validated_not_release_approval", "revision": revision, "platform": "linux/arm64", "image_digest": selected["digest"], "config_digest": manifest["config"]["digest"], "archive_sha256": digest, "layers": len(layers)}
+    return {"status": "OCI_validated_not_release_approval", "revision": revision, "platform": "linux/amd64", "image_digest": selected["digest"], "config_digest": manifest["config"]["digest"], "archive_sha256": digest, "layers": len(layers)}
 
 
 def verify_native(path, info):
     path = Path(path)
     require(path.is_file() and not path.is_symlink() and 0 < path.stat().st_size <= 65536, "native_receipt_file")
     receipt = json.loads(path.read_bytes(), object_pairs_hook=unique_object)
-    require(receipt["source_revision"] == info["revision"] and receipt["image_id"] == info["config_digest"] and receipt["native_runner_architecture"] == "aarch64" and receipt["image_architecture"] == "arm64", "native_receipt_identity")
+    require(receipt["source_revision"] == info["revision"] and receipt["image_id"] == info["config_digest"] and receipt["native_runner_architecture"] == "x86_64" and receipt["image_architecture"] == "amd64", "native_receipt_identity")
     require(receipt["container_init"] is True and receipt["synthetic_data_only"] is True and all(receipt[key] is False for key in ["published_host_ports", "external_container_network", "production_host_access"]), "native_receipt_isolation")
     require(type(receipt["checks"]) is list and len(receipt["checks"]) == len(NATIVE_CHECKS) and set(receipt["checks"]) == NATIVE_CHECKS, "native_receipt_checks")
     return {**info, "native_receipt_consistent": True}

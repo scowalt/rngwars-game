@@ -114,7 +114,7 @@ job.
 ## Verification and activation
 
 Portable tests exercise real files, SQLite and encrypted local Restic recovery. External
-GitHub/registry/Docker transports have doubles for fault injection. A separate ARM64 hosted fixture
+GitHub/registry/Docker transports have doubles for fault injection. A separate x86-64 hosted fixture
 uses real containers, the actual private-socket peer boundary, the unprivileged SSH adapter, data
 persistence and captured rollback. Its GitHub/registry transports are explicitly synthetic; it does
 not claim live authorization or image cryptography.

@@ -72,7 +72,7 @@ def verify(args):
     rootfs = config["rootfs"]
     require(rootfs["type"] == "layers" and type(rootfs["diff_ids"]) is list and len(rootfs["diff_ids"]) == len(manifest["layers"]) and all(type(value) is str and re.fullmatch(r"sha256:[a-f0-9]{64}", value) for value in rootfs["diff_ids"]), "release_rootfs_binding")
     runtime = config["config"]
-    require(config["os"] == "linux" and config["architecture"] == "arm64" and runtime["User"] == "10001:10001" and runtime["Entrypoint"] == ["/app/game-entrypoint.sh"] and runtime["Cmd"] == ["dotnet", "RNGWars.Api.dll"] and runtime["Labels"]["org.opencontainers.image.revision"] == args.revision and runtime["Labels"]["org.opencontainers.image.source"] == "https://github.com/" + REPOSITORY, "release_runtime_identity")
+    require(config["os"] == "linux" and config["architecture"] == "amd64" and runtime["User"] == "10001:10001" and runtime["Entrypoint"] == ["/app/game-entrypoint.sh"] and runtime["Cmd"] == ["dotnet", "RNGWars.Api.dll"] and runtime["Labels"]["org.opencontainers.image.revision"] == args.revision and runtime["Labels"]["org.opencontainers.image.source"] == "https://github.com/" + REPOSITORY, "release_runtime_identity")
     bundle_bytes = bounded_file(args.bundle)
     root_bytes = bounded_file(args.trusted_root)
     with tempfile.TemporaryDirectory(prefix="game-release-verifier-") as directory:
@@ -88,7 +88,7 @@ def verify(args):
         require(run["id"] == run_id and run["repository"]["id"] == run["head_repository"]["id"] == 1442331254 and run["head_sha"] == args.revision and run["head_branch"] == "main" and run["path"] == ".github/workflows/game-publication.yml" and run["actor"]["id"] == run["triggering_actor"]["id"] == 1100550 and run["event"] in {"workflow_dispatch", "workflow_run"} and type(run["run_attempt"]) is int and run["run_attempt"] == 1, "release_publication_identity")
         jobs = github(f"/actions/runs/{run_id}/attempts/1/jobs?per_page=100", environment)
         require(jobs["total_count"] == len(jobs["jobs"]) == 4 and {job["name"] for job in jobs["jobs"]} == {"resolve", "Build and exercise native image", "prepare", "publish"}, "release_publication_jobs")
-        require(all(job["run_id"] == run_id and job["status"] == "completed" and job["conclusion"] == "success" and job["labels"] == ["ubuntu-24.04-arm" if job["name"] == "Build and exercise native image" else "ubuntu-24.04"] for job in jobs["jobs"]), "release_publication_jobs")
+        require(all(job["run_id"] == run_id and job["status"] == "completed" and job["conclusion"] == "success" and job["labels"] == ["ubuntu-24.04"] for job in jobs["jobs"]), "release_publication_jobs")
         command = ["gh", "attestation", "verify", str(home / "manifest.json"), "--bundle", str(home / "bundle.jsonl"), "--custom-trusted-root", str(home / "trusted-root.jsonl"), "--repo", REPOSITORY, "--cert-identity", "https://github.com/" + WORKFLOW, "--cert-oidc-issuer", "https://token.actions.githubusercontent.com", "--signer-digest", args.revision, "--source-digest", args.revision, "--source-ref", "refs/heads/main", "--deny-self-hosted-runners", "--predicate-type", "https://slsa.dev/provenance/v1", "--format", "json"]
         records = execute(command, environment, 8 * MAX_JSON)
         require(type(records) is list and 0 < len(records) <= 30, "release_attestation_results")

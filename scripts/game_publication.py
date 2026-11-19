@@ -71,7 +71,7 @@ def prepare(identity, artifact_id, destination):
     jobs = metadata.github(f"/actions/runs/{run_id}/attempts/1/jobs?per_page=100")
     require(jobs["total_count"] == len(jobs["jobs"]) < 100, "game_build_inventory")
     native = [job for job in jobs["jobs"] if job["name"] == "Build and exercise native image"]
-    require(len(native) == 1 and native[0]["run_id"] == run_id and native[0]["status"] == "completed" and native[0]["conclusion"] == "success" and native[0]["labels"] == ["ubuntu-24.04-arm"], "game_native_job_result")
+    require(len(native) == 1 and native[0]["run_id"] == run_id and native[0]["status"] == "completed" and native[0]["conclusion"] == "success" and native[0]["labels"] == ["ubuntu-24.04"], "game_native_job_result")
     with tempfile.TemporaryDirectory(prefix="game-candidate-", dir=destination.parent) as directory:
         root = Path(directory)
         raw = root / "transport.zip"
@@ -193,7 +193,7 @@ class Registry:
 
     def push(self, path, revision):
         environment = {**self.environment, "REGISTRY_AUTH_FILE": str(self.auth)}
-        result = subprocess.run(["skopeo", "--override-os", "linux", "--override-arch", "arm64", "copy", "--preserve-digests", "--retry-times", "0", "oci-archive:" + str(path), "docker://" + IMAGE + ":" + revision], env=environment, capture_output=True, timeout=600)
+        result = subprocess.run(["skopeo", "--override-os", "linux", "--override-arch", "amd64", "copy", "--preserve-digests", "--retry-times", "0", "oci-archive:" + str(path), "docker://" + IMAGE + ":" + revision], env=environment, capture_output=True, timeout=600)
         require(result.returncode == 0, "game_registry_push_failed_no_retry")
 
     def verify(self, info):

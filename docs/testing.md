@@ -107,7 +107,7 @@ production PRs/pushes without path filters that could strand required promotion 
 
 Frontend build telemetry is disabled by empty values. Portable ops CI runs script/operator tests
 against disposable synthetic data and local encrypted repositories; tests render scheduler units and
-parse Compose without a daemon. The separate hosted native ARM64 workflow runs the actual image's
+parse Compose without a daemon. The separate hosted native x86-64 workflow runs the actual image's
 offline initializer, encrypted local backup/restore and first-user Production restart checks in
 network-isolated containers. It does not access a live host or real backup repository. IaC CI
 initializes with `-backend=false`, validates and lints without live credentials. Container CI builds

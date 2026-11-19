@@ -21,7 +21,7 @@ def require(value, code):
 
 
 def validate_context(env, machine):
-    require(env.get("GITHUB_ACTIONS") == "true" and env.get("GITHUB_REPOSITORY_ID") == "1442331254" and env.get("RUNNER_ARCH") == "ARM64" and machine == "aarch64", "native_hosted_ARM_required")
+    require(env.get("GITHUB_ACTIONS") == "true" and env.get("GITHUB_REPOSITORY_ID") == "1442331254" and env.get("RUNNER_ARCH") == "X64" and machine == "x86_64", "native_hosted_X64_required")
     require(re.fullmatch(r"[a-f0-9]{40}", env.get("GITHUB_SHA", "")), "exact_source_required")
 
 
@@ -96,7 +96,7 @@ def main():
     args = parser.parse_args()
     require(args.image == "rngwars-native:" + os.environ["GITHUB_SHA"], "fixture_image_binding")
     image = json.loads(command(["docker", "image", "inspect", args.image]).stdout)[0]
-    require(image["Architecture"] == "arm64" and image["Os"] == "linux" and image["Config"]["User"] == "10001:10001", "native_image_identity")
+    require(image["Architecture"] == "amd64" and image["Os"] == "linux" and image["Config"]["User"] == "10001:10001", "native_image_identity")
     require(image["Config"]["Entrypoint"] == ["/app/game-entrypoint.sh"] and image["Config"]["Cmd"] == ["dotnet", "RNGWars.Api.dll"], "runtime_command_changed")
     prefix = "rngwars-native-" + uuid.uuid4().hex
     volume = prefix + "-data"
@@ -169,7 +169,7 @@ def main():
         command(["docker", "exec", production, "/bin/sh", "-c", "test -s /usr/share/doc/rngwars/LICENSE && test -s /usr/share/doc/rngwars/THIRD_PARTY_LICENSES.txt"])
         checks.extend(["production_restart_with_same_DB_and_token", "bundled_frontend", "distributed_legal_notices"])
         client_image = "oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f"
-        command(["docker", "pull", "--platform", "linux/arm64", client_image], timeout=180)
+        command(["docker", "pull", "--platform", "linux/amd64", client_image], timeout=180)
         client_name = prefix + "-multiplayer-client"
         containers.append(client_name)
         fixture = Path(__file__).with_name("native_multiplayer_smoke.js").resolve()

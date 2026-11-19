@@ -22,9 +22,9 @@ class ReleaseGateTests(unittest.TestCase):
         self.now = datetime.now(timezone.utc)
         self.sha = "a" * 40
         self.artifact = b"synthetic-reviewed-artifact"
-        self.policy = {"enabled": True, "operations": ["marketing", "publish-game", "deploy-game"], "repository": "example/game", "repository_id": "123", "owner": "example", "ref": "refs/heads/production", "environment": "fixture-release", "image_repository": "ghcr.io/example/game", "platform": "linux/arm64", "required_checks": ["api", "frontend", "backup", "image"]}
+        self.policy = {"enabled": True, "operations": ["marketing", "publish-game", "deploy-game"], "repository": "example/game", "repository_id": "123", "owner": "example", "ref": "refs/heads/production", "environment": "fixture-release", "image_repository": "ghcr.io/example/game", "platform": "linux/amd64", "required_checks": ["api", "frontend", "backup", "image"]}
         self.context = {"repository": "example/game", "repository_id": "123", "actor": "example", "triggering_actor": "example", "event_name": "workflow_dispatch", "ref": "refs/heads/production", "environment": "fixture-release", "run_attempt": 1, "sha": self.sha, "approved_revision": self.sha, "controller_fence_attested": True, "private_fence_record": "synthetic-private-record", "tag_already_exists": False}
-        self.evidence = {"revision": self.sha, "complete": True, "operation": "publish-game", "verified_at": self.now.isoformat(), "checks": {name: "passed" for name in self.policy["required_checks"]}, "artifact_sha256": hashlib.sha256(self.artifact).hexdigest(), "image_repository": "ghcr.io/example/game", "platform": "linux/arm64", "native_build": True}
+        self.evidence = {"revision": self.sha, "complete": True, "operation": "publish-game", "verified_at": self.now.isoformat(), "checks": {name: "passed" for name in self.policy["required_checks"]}, "artifact_sha256": hashlib.sha256(self.artifact).hexdigest(), "image_repository": "ghcr.io/example/game", "platform": "linux/amd64", "native_build": True}
 
     def check(self, operation="publish-game", policy=None, context=None, evidence=None):
         return GATE.check(operation, policy or self.policy, context or self.context, evidence or self.evidence, self.now)
@@ -60,7 +60,7 @@ class ReleaseGateTests(unittest.TestCase):
                 self.check(context=context)
 
     def test_wrong_native_platform_image_repository_or_revision_is_rejected(self):
-        for key, value in [("platform", "linux/amd64"), ("native_build", False), ("image_repository", "ghcr.io/other/image"), ("revision", "b" * 40), ("operation", "deploy-game")]:
+        for key, value in [("platform", "linux/arm64"), ("native_build", False), ("image_repository", "ghcr.io/other/image"), ("revision", "b" * 40), ("operation", "deploy-game")]:
             with self.subTest(key=key), self.assertRaises(GATE.GateError):
                 self.check(evidence={**self.evidence, key: value})
 

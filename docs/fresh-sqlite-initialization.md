@@ -74,7 +74,7 @@ The partial-publication test imposes a child-only file-size limit. Its test-only
 setup, so the failure reaches database creation. It changes neither normal tests nor production
 runtime configuration. Core dumps are disabled in that limited subprocess.
 
-The [native ARM64 fixture](native-game-validation.md) executes the real image's initializer, backs
+The [native x86-64 fixture](native-game-validation.md) executes the real image's initializer, backs
 up and restores that empty output through an isolated encrypted local Restic repository, and starts
 Production against the restored file before the first signup and restart. No fixture result proves
 live-host ownership, real off-host recovery, or deployment acceptance.

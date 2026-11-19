@@ -69,7 +69,7 @@ jobs:
     name: Build and exercise native image
     needs: resolve
     if: needs.resolve.outputs.eligible == 'true'
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -83,14 +83,14 @@ jobs:
       - name: Prepare isolated native tools and output
         run: |
           set -eu
-          test "$(uname -m)" = aarch64
+          test "$(uname -m)" = x86_64
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends skopeo
           skopeo --version
           mkdir -m 0700 "$RUNNER_TEMP/game-candidate"
           version=0.19.1
           cd "$RUNNER_TEMP"
-          asset="restic_${version}_linux_arm64.bz2"
+          asset="restic_${version}_linux_amd64.bz2"
           base="https://github.com/restic/restic/releases/download/v${version}"
           curl --fail --silent --show-error --location "$base/$asset" -o "$asset"
           curl --fail --silent --show-error --location "$base/SHA256SUMS" -o SHA256SUMS
@@ -108,7 +108,7 @@ jobs:
         with:
           context: .
           target: production
-          platforms: linux/arm64
+          platforms: linux/amd64
           push: false
           provenance: false
           sbom: false
@@ -123,7 +123,7 @@ jobs:
         run: |
           set -eu
           python3 scripts/game_artifact.py inspect "$RUNNER_TEMP/game-candidate/image.oci.tar" --revision "$GITHUB_SHA"
-          skopeo --override-os linux --override-arch arm64 copy "oci-archive:$RUNNER_TEMP/game-candidate/image.oci.tar" "docker-daemon:rngwars-native:$GITHUB_SHA"
+          skopeo --override-os linux --override-arch amd64 copy "oci-archive:$RUNNER_TEMP/game-candidate/image.oci.tar" "docker-daemon:rngwars-native:$GITHUB_SHA"
           python3 scripts/native_game_smoke.py "rngwars-native:$GITHUB_SHA"
           test ! -e "$RUNNER_TEMP/game-candidate/native-game-result.json"
           mv "$RUNNER_TEMP/native-game-result.json" "$RUNNER_TEMP/game-candidate/native-game-result.json"

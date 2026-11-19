@@ -18,7 +18,7 @@ def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
-def fixture(architecture="arm64", user="10001:10001", revision=REVISION):
+def fixture(architecture="amd64", user="10001:10001", revision=REVISION):
     layer_buffer = io.BytesIO()
     with tarfile.open(fileobj=layer_buffer, mode="w", format=tarfile.USTAR_FORMAT) as layer:
         entry = tarfile.TarInfo("fixture.txt")
@@ -59,7 +59,7 @@ class GameArtifactTests(unittest.TestCase):
     def test_binds_native_receipt_to_the_actual_image_config(self):
         files = fixture()
         manifest = json.loads(files["blobs/sha256/" + json.loads(files["index.json"])["manifests"][0]["digest"].split(":")[1]])
-        receipt = {"source_revision": REVISION, "image_id": manifest["config"]["digest"], "native_runner_architecture": "aarch64", "image_architecture": "arm64", "container_init": True, "checks": ["production_rejects_unmarked_empty_population", "offline_initialization_without_web_host", "offline_initialization_rejects_root", "encrypted_empty_baseline_backup_restore", "production_accepts_initialized_empty_restore", "native_SQLite_signup", "profile_update", "practice_creation", "production_restart_with_same_DB_and_token", "bundled_frontend", "distributed_legal_notices", "production_does_not_create_missing_DB", "multiplayer_sequential_join_completion"], "synthetic_data_only": True, "published_host_ports": False, "external_container_network": False, "production_host_access": False}
+        receipt = {"source_revision": REVISION, "image_id": manifest["config"]["digest"], "native_runner_architecture": "x86_64", "image_architecture": "amd64", "container_init": True, "checks": ["production_rejects_unmarked_empty_population", "offline_initialization_without_web_host", "offline_initialization_rejects_root", "encrypted_empty_baseline_backup_restore", "production_accepts_initialized_empty_restore", "native_SQLite_signup", "profile_update", "practice_creation", "production_restart_with_same_DB_and_token", "bundled_frontend", "distributed_legal_notices", "production_does_not_create_missing_DB", "multiplayer_sequential_join_completion"], "synthetic_data_only": True, "published_host_ports": False, "external_container_network": False, "production_host_access": False}
         with tempfile.TemporaryDirectory() as directory:
             image = Path(directory) / "image.tar"
             image.write_bytes(archive(files))
@@ -83,10 +83,10 @@ class GameArtifactTests(unittest.TestCase):
         files["index.json"] = encoded({"schemaVersion": 2, "manifests": [{"mediaType": MEDIA + "index.v1+json", "digest": "sha256:" + digest, "size": len(nested)}]})
         result = self.invoke(archive(files))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["image_digest"], "sha256:802be08bda929fdfd2e631512683bdec849c61f39fb7cfd47297554e11bb28b8")
+        self.assertEqual(json.loads(result.stdout)["image_digest"], "sha256:9ac4f7533edefcef4cca70d93eb5176d7f65cc6eac1985384e9733fc607b5453")
 
     def test_rejects_other_architecture_root_runtime_and_wrong_source(self):
-        for files in [fixture(architecture="amd64"), fixture(user="0:0"), fixture(revision="b" * 40)]:
+        for files in [fixture(architecture="arm64"), fixture(user="0:0"), fixture(revision="b" * 40)]:
             with self.subTest(files=list(files)):
                 self.assertNotEqual(self.invoke(archive(files)).returncode, 0)
 
@@ -147,9 +147,9 @@ class GameArtifactTests(unittest.TestCase):
         value = json.loads(result.stdout)
         self.assertEqual(value["status"], "OCI_validated_not_release_approval")
         self.assertEqual(value["revision"], REVISION)
-        self.assertEqual(value["platform"], "linux/arm64")
+        self.assertEqual(value["platform"], "linux/amd64")
         self.assertEqual(value["layers"], 1)
-        self.assertEqual(value["image_digest"], "sha256:802be08bda929fdfd2e631512683bdec849c61f39fb7cfd47297554e11bb28b8")
+        self.assertEqual(value["image_digest"], "sha256:9ac4f7533edefcef4cca70d93eb5176d7f65cc6eac1985384e9733fc607b5453")
 
 
 if __name__ == "__main__":

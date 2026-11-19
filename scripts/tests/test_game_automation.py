@@ -57,8 +57,8 @@ class AutomaticLineageCLITests(unittest.TestCase):
     def publication(self):
         self.api["/actions/workflows/game-publication.yml"] = {"id": 13, "path": ".github/workflows/game-publication.yml", "state": "active"}
         self.api["/actions/runs/77"] = {**self.run, "id": 77, "workflow_id": 13, "path": ".github/workflows/game-publication.yml", "event": "workflow_run"}
-        self.api["/actions/runs/77/attempts/1/jobs?per_page=100"] = {"total_count": 4, "jobs": [{"name": name, "run_id": 77, "status": "completed", "conclusion": "success", "labels": ["ubuntu-24.04-arm" if name == "Build and exercise native image" else "ubuntu-24.04"]} for name in ["resolve", "Build and exercise native image", "prepare", "publish"]]}
-        receipt = {"status": "game_image_publication_verified", "repository": "scowalt/rngwars-game", "repository_id": 1442331254, "source_revision": REVISION, "source_branch": "main", "workflow_revision": REVISION, "revision": REVISION, "ci_run_id": 42, "publication_run_id": 77, "platform": "linux/arm64", "image_repository": "ghcr.io/scowalt/rngwars-game-releases", "image_digest": "sha256:" + "c" * 64, "config_digest": "sha256:" + "d" * 64, "native_receipt_consistent": True, "attempt_tag": "release-attempt/game-publication/" + REVISION, "ruleset_verification": "effective_never"}
+        self.api["/actions/runs/77/attempts/1/jobs?per_page=100"] = {"total_count": 4, "jobs": [{"name": name, "run_id": 77, "status": "completed", "conclusion": "success", "labels": ["ubuntu-24.04"]} for name in ["resolve", "Build and exercise native image", "prepare", "publish"]]}
+        receipt = {"status": "game_image_publication_verified", "repository": "scowalt/rngwars-game", "repository_id": 1442331254, "source_revision": REVISION, "source_branch": "main", "workflow_revision": REVISION, "revision": REVISION, "ci_run_id": 42, "publication_run_id": 77, "platform": "linux/amd64", "image_repository": "ghcr.io/scowalt/rngwars-game-releases", "image_digest": "sha256:" + "c" * 64, "config_digest": "sha256:" + "d" * 64, "native_receipt_consistent": True, "attempt_tag": "release-attempt/game-publication/" + REVISION, "ruleset_verification": "effective_never"}
         self.set_receipt(receipt)
         return receipt
 
@@ -86,7 +86,7 @@ class AutomaticLineageCLITests(unittest.TestCase):
                 self.api["/actions/runs/77"] = {**original, **change}
                 self.assertNotEqual(self.invoke("publication", 77).returncode, 0)
         self.api["/actions/runs/77"] = original
-        self.api["/actions/runs/77/attempts/1/jobs?per_page=100"]["jobs"][1]["labels"] = ["ubuntu-24.04"]
+        self.api["/actions/runs/77/attempts/1/jobs?per_page=100"]["jobs"][1]["labels"] = ["ubuntu-24.04-arm"]
         self.assertNotEqual(self.invoke("publication", 77).returncode, 0)
 
     def test_receipt_must_bind_exact_artifact_CI_image_namespace_and_complete_publication(self):

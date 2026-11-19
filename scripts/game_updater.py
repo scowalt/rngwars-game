@@ -223,10 +223,10 @@ class Updater:
             evidence = area / "release"
             release = game_release.fetch(argparse.Namespace(destination=str(evidence), revision=request["image_source_revision"], digest=request["image_digest"], publication_run=str(request["publication_run_id"])))
             image = release["image"]
-            self.run([*self.docker, "pull", "--platform", "linux/arm64", image], timeout=300)
+            self.run([*self.docker, "pull", "--platform", "linux/amd64", image], timeout=300)
             pulled = self.docker_json("image", "inspect", image)
             expected = json.loads((evidence / "config.json").read_bytes())
-            require(pulled["Id"] in {request["image_digest"], release["config_digest"]} and (pulled.get("Descriptor", {}).get("digest") == request["image_digest"] or image in pulled.get("RepoDigests", [])) and pulled["Os"] == "linux" and pulled["Architecture"] == "arm64", "updater_pulled_image")
+            require(pulled["Id"] in {request["image_digest"], release["config_digest"]} and (pulled.get("Descriptor", {}).get("digest") == request["image_digest"] or image in pulled.get("RepoDigests", [])) and pulled["Os"] == "linux" and pulled["Architecture"] == "amd64", "updater_pulled_image")
             require(all(pulled["Config"].get(key) == expected["config"].get(key) for key in ["User", "Entrypoint", "Cmd", "Env", "Labels", "WorkingDir"]) and pulled["RootFS"]["Layers"] == expected["rootfs"]["diff_ids"], "updater_pulled_configuration")
             work = self.area(Path(p["work_directory"]) / str(run_id))
             recovery = self.area(work / "recovery")
@@ -319,7 +319,7 @@ def main():
         signal.alarm(5)
         policy = configuration(args.policy)
         if args.operation == "serve":
-            require(os.geteuid() == 0 and policy["data_uid"] == policy["data_gid"] == 10001 and policy["architecture"] == "aarch64" and policy["workload"] == policy["network"] == "rngwars-game", "updater_privileged_binding")
+            require(os.geteuid() == 0 and policy["data_uid"] == policy["data_gid"] == 10001 and policy["architecture"] == "x86_64" and policy["workload"] == policy["network"] == "rngwars-game", "updater_privileged_binding")
             with socket.socket(fileno=os.dup(0)) as peer:
                 require(peer.family == socket.AF_UNIX and peer.type == socket.SOCK_STREAM, "updater_private_socket")
                 pid, uid, gid = struct.unpack("3i", peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))

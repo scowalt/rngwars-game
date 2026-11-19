@@ -41,7 +41,7 @@ class PublicationCLITests(unittest.TestCase):
         files = fixture()
         index = json.loads(files["index.json"])
         manifest = json.loads(files["blobs/sha256/" + index["manifests"][0]["digest"].split(":")[1]])
-        native = {"source_revision": REVISION, "image_id": manifest["config"]["digest"], "native_runner_architecture": "aarch64", "image_architecture": "arm64", "container_init": True, "checks": ["production_rejects_unmarked_empty_population", "offline_initialization_without_web_host", "offline_initialization_rejects_root", "encrypted_empty_baseline_backup_restore", "production_accepts_initialized_empty_restore", "native_SQLite_signup", "profile_update", "practice_creation", "production_restart_with_same_DB_and_token", "bundled_frontend", "distributed_legal_notices", "production_does_not_create_missing_DB", "multiplayer_sequential_join_completion"], "synthetic_data_only": True, "published_host_ports": False, "external_container_network": False, "production_host_access": False}
+        native = {"source_revision": REVISION, "image_id": manifest["config"]["digest"], "native_runner_architecture": "x86_64", "image_architecture": "amd64", "container_init": True, "checks": ["production_rejects_unmarked_empty_population", "offline_initialization_without_web_host", "offline_initialization_rejects_root", "encrypted_empty_baseline_backup_restore", "production_accepts_initialized_empty_restore", "native_SQLite_signup", "profile_update", "practice_creation", "production_restart_with_same_DB_and_token", "bundled_frontend", "distributed_legal_notices", "production_does_not_create_missing_DB", "multiplayer_sequential_join_completion"], "synthetic_data_only": True, "published_host_ports": False, "external_container_network": False, "production_host_access": False}
         content = io.BytesIO()
         with zipfile.ZipFile(content, "w") as transport:
             transport.writestr("image.oci.tar", archive(files))
@@ -49,7 +49,7 @@ class PublicationCLITests(unittest.TestCase):
         raw = content.getvalue()
         (self.root / "artifact.zip").write_bytes(raw)
         self.responses["/actions/artifacts/99"] = {"id": 99, "name": "game-image-77-1", "expired": False, "size_in_bytes": len(raw), "digest": "sha256:" + hashlib.sha256(raw).hexdigest(), "workflow_run": {"id": 77, "repository_id": 1442331254, "head_repository_id": 1442331254, "head_sha": REVISION, "head_branch": "main"}}
-        self.responses["/actions/runs/77/attempts/1/jobs?per_page=100"] = {"total_count": 1, "jobs": [{"id": 101, "name": "Build and exercise native image", "run_id": 77, "status": "completed", "conclusion": "success", "labels": ["ubuntu-24.04-arm"]}]}
+        self.responses["/actions/runs/77/attempts/1/jobs?per_page=100"] = {"total_count": 1, "jobs": [{"id": 101, "name": "Build and exercise native image", "run_id": 77, "status": "completed", "conclusion": "success", "labels": ["ubuntu-24.04"]}]}
 
     def test_prepares_the_bound_native_artifact_without_overwriting_output(self):
         self.native_artifact()
@@ -58,7 +58,7 @@ class PublicationCLITests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         value = json.loads(result.stdout)
         self.assertEqual(value["status"], "native_candidate_verified_no_publication")
-        self.assertEqual(value["image_digest"], "sha256:802be08bda929fdfd2e631512683bdec849c61f39fb7cfd47297554e11bb28b8")
+        self.assertEqual(value["image_digest"], "sha256:9ac4f7533edefcef4cca70d93eb5176d7f65cc6eac1985384e9733fc607b5453")
         self.assertEqual((destination / "image.oci.tar").read_bytes(), archive(fixture()))
         before = sorted(path.name for path in destination.iterdir())
         result = self.invoke("prepare", str(destination), "--artifact-id", "99")
@@ -78,7 +78,7 @@ class PublicationCLITests(unittest.TestCase):
         skopeo = self.root / "skopeo"
         skopeo.write_text("#!" + sys.executable + "\nimport os,sys\nfrom pathlib import Path\nassert 'copy' in sys.argv and '--preserve-digests' in sys.argv\nassert sys.argv[-1]=='docker://ghcr.io/scowalt/rngwars-game-releases:" + REVISION + "'\nassert Path(os.environ['REGISTRY_AUTH_FILE']).is_file()\nPath(os.environ['HOME'],'pushed').write_text('published')\n")
         skopeo.chmod(0o700)
-        self.env.update(GH_TOKEN="synthetic-github-package-token", DOCKER_CONFIG=str(self.root / "registry-auth"), GAME_PUBLICATION_OPERATION="publish", EXPECTED_IMAGE_DIGEST="sha256:802be08bda929fdfd2e631512683bdec849c61f39fb7cfd47297554e11bb28b8")
+        self.env.update(GH_TOKEN="synthetic-github-package-token", DOCKER_CONFIG=str(self.root / "registry-auth"), GAME_PUBLICATION_OPERATION="publish", EXPECTED_IMAGE_DIGEST="sha256:9ac4f7533edefcef4cca70d93eb5176d7f65cc6eac1985384e9733fc607b5453")
         self.env["EXPECTED_ARCHIVE_SHA256"] = hashlib.sha256(archive(files)).hexdigest()
         self.env["GAME_PUBLICATION_ENABLED"] = "true"
         attempt = "release-attempt/game-publication/" + REVISION
@@ -101,7 +101,7 @@ class PublicationCLITests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         receipt = self.root / "published.json"
         receipt.write_text(result.stdout)
-        statement = {"predicateType": "https://slsa.dev/provenance/v1", "subject": [{"digest": {"sha256": "802be08bda929fdfd2e631512683bdec849c61f39fb7cfd47297554e11bb28b8"}}], "predicate": {"runDetails": {"metadata": {"invocationId": "https://github.com/scowalt/rngwars-game/actions/runs/77/attempts/1"}}}}
+        statement = {"predicateType": "https://slsa.dev/provenance/v1", "subject": [{"digest": {"sha256": "9ac4f7533edefcef4cca70d93eb5176d7f65cc6eac1985384e9733fc607b5453"}}], "predicate": {"runDetails": {"metadata": {"invocationId": "https://github.com/scowalt/rngwars-game/actions/runs/77/attempts/1"}}}}
         attestation = self.root / "attestations.json"
         attestation.write_text(json.dumps([{"verificationResult": {"statement": statement}}]))
         result = self.invoke("verify-published", str(receipt))
