@@ -52,7 +52,7 @@ def main():
     import test_game_updater
     fixture = test_game_updater.UpdaterCLITests()
     fixture.setUp()
-    base = Path(tempfile.mkdtemp(prefix="rngwars-updater-native-", dir="/run"))
+    base = Path(tempfile.mkdtemp(prefix="rngwars-updater-native-", dir="/var/lib"))
     base.chmod(0o755)
     created = []
     network = None
