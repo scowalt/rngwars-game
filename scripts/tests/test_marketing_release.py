@@ -68,6 +68,33 @@ class ReleaseTests(unittest.TestCase):
             promote.assert_not_called()
             self.assertTrue(evidence.call_args.args[4]["health"]["preview_urls_preserved_disabled"])
 
+    def test_preview_version_that_reads_back_late_is_accepted_and_other_errors_are_not_retried(self):
+        info = {"kind": "preview", "bundle_sha256": "a" * 64, "source_revision": "b" * 40}
+        binding = {"account_id": "a" * 32, "worker_name": "fixture-worker", "health_origin": "https://example.invalid"}
+        env = {"MARKETING_RELEASE_ENABLED": "true", "RELEASE_KIND": "preview", **{name: "synthetic" for name in ["CLOUDFLARE_API_TOKEN", "RELEASE_STORAGE_ACCESS_KEY_ID", "RELEASE_STORAGE_SECRET_ACCESS_KEY", "RELEASE_LOG_ENCRYPTION_KEY", "GH_TOKEN"]}}
+        version = "11111111-1111-1111-1111-111111111111"
+        for status, outcome, sleeps in [("404", "verified", 2), ("403", "failed", 0)]:
+            with self.subTest(status=status):
+                class Client:
+                    worker = "fixture-worker"
+                    secrets = []
+                    events = []
+                    misses = 2
+                    def request(self, method, path):
+                        if path.endswith("/subdomain"):
+                            return {"previews_enabled": False}
+                        if self.misses:
+                            self.misses -= 1
+                            raise r.m.Blocked("provider_http_" + status)
+                        return {"id": version}
+                with patch.dict(os.environ, env), patch.object(r.cf, "Client", return_value=Client()), patch.object(r.cf, "fenced"), patch.object(r.cf, "active_version", return_value="baseline"), patch.object(r.cf, "upload", return_value=version), patch.object(r, "reserve"), patch.object(r, "evidence") as evidence, patch.object(r.time, "sleep") as sleep, patch.object(r, "health", return_value={"passed": True}), patch("builtins.print"):
+                    try:
+                        r.deploy(info, {"index.html": b"RNGWars"}, "c" * 40, 42, binding)
+                    except r.m.Blocked as error:
+                        self.assertEqual(str(error), "provider_http_403")
+                    self.assertEqual(evidence.call_args.args[3], outcome)
+                    self.assertEqual(sleep.call_count, sleeps)
+
     def test_lost_promotion_reply_is_resolved_by_readback_without_repeating_the_write(self):
         info = {"kind": "production", "bundle_sha256": "a" * 64, "source_revision": "b" * 40}
         binding = {"account_id": "a" * 32, "worker_name": "fixture-worker", "health_origin": "https://example.invalid"}

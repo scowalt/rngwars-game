@@ -38,14 +38,15 @@ compatibility settings, bindings and routing are checked/preserved; no Worker or
 created.
 
 Preview uploads must leave the active production version unchanged. If version-preview serving was
-already disabled, it stays disabled and acceptance uses version metadata. The controller does not
-silently expose new preview URLs. When serving is enabled, its documented version URL is checked.
-Production promotion is a separate exact-version request, followed by active-version and public
-content/asset checks. The active-version readback is polled for about 30 seconds, because Cloudflare
-can report the previous version for a few seconds after accepting a promotion. Only the read
-repeats. The promotion request is never sent again. Known health failure causes at most one rollback
-to the captured version. An ambiguous write is resolved by readback where possible, never blindly
-repeated.
+already disabled, it stays disabled and acceptance uses version metadata. That metadata read is
+polled for about 30 seconds while it returns 404, because Cloudflare can briefly report a version it
+has just created as missing. Any other error fails at once. The controller does not silently expose
+new preview URLs. When serving is enabled, its documented version URL is checked. Production
+promotion is a separate exact-version request, followed by active-version and public content/asset
+checks. The active-version readback is polled for about 30 seconds, because Cloudflare can report
+the previous version for a few seconds after accepting a promotion. Only the read repeats. The
+promotion request is never sent again. Known health failure causes at most one rollback to the
+captured version. An ambiguous write is resolved by readback where possible, never blindly repeated.
 
 ## Private evidence and recovery
 
