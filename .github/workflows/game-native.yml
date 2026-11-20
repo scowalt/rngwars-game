@@ -84,14 +84,14 @@ concurrency:
 
 jobs:
   native-runtime:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
-      - name: Require a native ARM64 runner
-        run: test "$(uname -m)" = aarch64
+      - name: Require a native X64 runner
+        run: test "$(uname -m)" = x86_64
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
       - name: Build the actual production image without publication
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
@@ -101,7 +101,7 @@ jobs:
         with:
           context: .
           target: production
-          platforms: linux/arm64
+          platforms: linux/amd64
           push: false
           load: true
           tags: rngwars-native:${{ github.sha }}
@@ -113,7 +113,7 @@ jobs:
           set -eu
           version=0.19.1
           cd "$RUNNER_TEMP"
-          asset="restic_${version}_linux_arm64.bz2"
+          asset="restic_${version}_linux_amd64.bz2"
           base="https://github.com/restic/restic/releases/download/v${version}"
           curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 3 --retry-max-time 120 --connect-timeout 10 --max-time 60 "$base/$asset" -o "$asset"
           curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 3 --retry-max-time 120 --connect-timeout 10 --max-time 60 "$base/SHA256SUMS" -o SHA256SUMS

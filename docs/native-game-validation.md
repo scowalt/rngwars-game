@@ -1,10 +1,10 @@
-# Native ARM64 game image validation
+# Native x86-64 game image validation
 
-`Native game image` builds the actual production Docker target on a GitHub-hosted ARM64 runner. It
+`Native game image` builds the actual production Docker target on a GitHub-hosted x86-64 runner. It
 does not publish an image, use a private runner, connect to a game host, or access real data. Image
 architecture and configured non-root user/entrypoint are verified before runtime checks.
 
-The runtime harness is restricted to this repository's hosted ARM64 context. It creates one uniquely
+The runtime harness is restricted to this repository's hosted x86-64 context. It creates one uniquely
 named and labeled disposable Docker volume. Testing mode creates an unmarked empty negative fixture,
 which Production must reject. The real image then runs the explicit offline initializer as the data
 owner, while root invocation must fail. Invalid listening/database environment settings demonstrate

@@ -17,7 +17,7 @@ python3 scripts/game_release.py fetch /absolute/new-directory \
 The command retrieves the manifest/config from the public release namespace, genuine attestations
 from GitHub, and Sigstore trusted roots through the GitHub CLI's verified TUF flow. It verifies:
 
-- Exact manifest/config digests, bounded OCI descriptors and the Linux ARM64 runtime identity.
+- Exact manifest/config digests, bounded OCI descriptors and the Linux x86-64 runtime identity.
 - A successful first-attempt owner-dispatched main publication, including all four expected jobs and
   the native runner. A signature from an otherwise failed publication is insufficient.
 - Genuine provenance with the exact trusted workflow, issuer, source/signer SHA, main ref, hosted

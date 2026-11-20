@@ -13,9 +13,9 @@ SPEC.loader.exec_module(n)
 
 class NativeContextTests(unittest.TestCase):
     def test_rejects_local_x86_or_other_repository_execution(self):
-        good = {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY_ID": "1442331254", "RUNNER_ARCH": "ARM64", "GITHUB_SHA": "a" * 40}
-        n.validate_context(good, "aarch64")
-        for env, machine in [({}, "aarch64"), (good, "x86_64"), ({**good, "GITHUB_REPOSITORY_ID": "1"}, "aarch64"), ({**good, "GITHUB_SHA": "main"}, "aarch64")]:
+        good = {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY_ID": "1442331254", "RUNNER_ARCH": "X64", "GITHUB_SHA": "a" * 40}
+        n.validate_context(good, "x86_64")
+        for env, machine in [({}, "x86_64"), (good, "aarch64"), ({**good, "GITHUB_REPOSITORY_ID": "1"}, "x86_64"), ({**good, "GITHUB_SHA": "main"}, "x86_64")]:
             with self.subTest(machine=machine, env=env):
                 with self.assertRaises(n.Failed):
                     n.validate_context(env, machine)

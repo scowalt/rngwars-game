@@ -12,7 +12,7 @@ from test_game_artifact import fixture
 
 TOOL = Path(__file__).parents[1] / "game_release.py"
 REVISION = "a" * 40
-DIGEST = "sha256:802be08bda929fdfd2e631512683bdec849c61f39fb7cfd47297554e11bb28b8"
+DIGEST = "sha256:9ac4f7533edefcef4cca70d93eb5176d7f65cc6eac1985384e9733fc607b5453"
 IMAGE = "ghcr.io/scowalt/rngwars-game-releases"
 REPOSITORY = "scowalt/rngwars-game"
 
@@ -67,7 +67,7 @@ class ReleaseVerificationCLITests(unittest.TestCase):
         (self.root / "trusted-root.jsonl").write_text('{"synthetic_root":true}\n')
         self.statement = {"predicateType": "https://slsa.dev/provenance/v1", "subject": [{"name": IMAGE, "digest": {"sha256": DIGEST.split(":")[1]}}], "predicate": {"runDetails": {"metadata": {"invocationId": "https://github.com/scowalt/rngwars-game/actions/runs/77/attempts/1"}}}}
         self.run = {"id": 77, "repository": {"id": 1442331254}, "head_repository": {"id": 1442331254}, "head_sha": REVISION, "head_branch": "main", "path": ".github/workflows/game-publication.yml", "event": "workflow_dispatch", "run_attempt": 1, "status": "completed", "conclusion": "success", "actor": {"id": 1100550}, "triggering_actor": {"id": 1100550}}
-        self.jobs = {"total_count": 4, "jobs": [{"name": name, "run_id": 77, "status": "completed", "conclusion": "success", "labels": ["ubuntu-24.04-arm" if name == "Build and exercise native image" else "ubuntu-24.04"]} for name in ["resolve", "Build and exercise native image", "prepare", "publish"]]}
+        self.jobs = {"total_count": 4, "jobs": [{"name": name, "run_id": 77, "status": "completed", "conclusion": "success", "labels": ["ubuntu-24.04"]} for name in ["resolve", "Build and exercise native image", "prepare", "publish"]]}
         curl = self.root / "curl"
         curl.write_text("#!" + sys.executable + "\n" + FAKE_CURL)
         curl.chmod(0o700)
@@ -115,7 +115,7 @@ class ReleaseVerificationCLITests(unittest.TestCase):
                 if case == "skipped-publish":
                     self.jobs["jobs"][-1]["conclusion"] = "skipped"
                 elif case == "wrong-native-runner":
-                    self.jobs["jobs"][1]["labels"] = ["ubuntu-24.04"]
+                    self.jobs["jobs"][1]["labels"] = ["ubuntu-24.04-arm"]
                 elif case == "different-run":
                     self.jobs["jobs"][1]["run_id"] = 78
                 elif case == "duplicate":
@@ -127,7 +127,7 @@ class ReleaseVerificationCLITests(unittest.TestCase):
                 self.assertIn("release_publication_jobs", result.stderr)
 
     def test_rejects_digest_bound_images_with_wrong_runtime_or_revision(self):
-        for files in [fixture(architecture="amd64"), fixture(user="0:0"), fixture(revision="b" * 40)]:
+        for files in [fixture(architecture="arm64"), fixture(user="0:0"), fixture(revision="b" * 40)]:
             with self.subTest(image=list(files)):
                 self.digest = json.loads(files["index.json"])["manifests"][0]["digest"]
                 manifest = files["blobs/sha256/" + self.digest.split(":")[1]]

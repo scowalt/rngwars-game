@@ -29,7 +29,7 @@ updater. A caller-supplied recovery boolean is never treated as operational evid
 
 ## Build and artifact isolation
 
-The native build job runs on GitHub-hosted `ubuntu-24.04-arm` with read-only repository permission.
+The native build job runs on GitHub-hosted `ubuntu-24.04` (x86-64) with read-only repository permission.
 It has no registry-write, signing, hosting or backup capability. It builds the actual `production`
 Docker target as OCI, imports it into the disposable Docker daemon and runs the existing native
 fixture. Frontend telemetry build arguments are empty for this private-verification image; public
@@ -49,7 +49,7 @@ unknown payloads, duplicate archive/JSON entries, external descriptors, unexpect
 other architectures and trailing data are rejected. It reads archive members but never extracts or
 executes their contents. Native receipt consistency is explicitly **not release approval**.
 
-The trusted `prepare` job checks the actual successful hosted ARM build job, artifact/run/repository
+The trusted `prepare` job checks the actual successful hosted x86-64 build job, artifact/run/repository
 identity and transport digest, then revalidates OCI and native receipt identity. It creates only a
 new private output directory; it does not overwrite another candidate.
 

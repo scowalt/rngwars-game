@@ -40,7 +40,7 @@ def sandbox_identity_check(base):
 
 
 def main():
-    assert os.geteuid() == 0 and os.uname().machine == "aarch64"
+    assert os.geteuid() == 0 and os.uname().machine == "x86_64"
     assert os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted" and os.environ.get("GITHUB_REPOSITORY_ID") == "1442331254"
     assert len(sys.argv) == 2 and re.fullmatch(r"rngwars-native:[a-f0-9]{40}", sys.argv[1])
     assert not any(name in os.environ for name in ["GAME_SSH_PRIVATE_KEY", "GAME_NETWORK_BINDING", "AWS_SECRET_ACCESS_KEY"])
@@ -52,7 +52,7 @@ def main():
     import test_game_updater
     fixture = test_game_updater.UpdaterCLITests()
     fixture.setUp()
-    base = Path(tempfile.mkdtemp(prefix="rngwars-updater-native-", dir="/run"))
+    base = Path(tempfile.mkdtemp(prefix="rngwars-updater-native-", dir="/var/lib"))
     base.chmod(0o755)
     created = []
     network = None
@@ -78,7 +78,7 @@ def main():
         recipe = "FROM " + sys.argv[1] + "\nLABEL org.opencontainers.image.revision=" + "a" * 40 + " org.opencontainers.image.source=https://github.com/scowalt/rngwars-game\n"
         run([docker, "build", "--tag", derived, "-"], input=recipe.encode())
         image = json.loads(run([docker, "image", "inspect", derived]))[0]
-        config = {"architecture": "arm64", "os": "linux", "config": image["Config"], "rootfs": {"type": "layers", "diff_ids": image["RootFS"]["Layers"]}}
+        config = {"architecture": "amd64", "os": "linux", "config": image["Config"], "rootfs": {"type": "layers", "diff_ids": image["RootFS"]["Layers"]}}
         config_raw = json.dumps(config).encode()
         manifest = {"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json", "config": {"mediaType": "application/vnd.oci.image.config.v1+json", "digest": "sha256:" + hashlib.sha256(config_raw).hexdigest(), "size": len(config_raw)}, "layers": [{"mediaType": "application/vnd.oci.image.layer.v1.tar", "digest": value, "size": 1} for value in config["rootfs"]["diff_ids"]]}
         manifest_raw = json.dumps(manifest).encode()
@@ -117,7 +117,7 @@ def main():
         token = player["token"]
         user_id = player["user"]["id"]
         assert token
-        fixture.policy.update(architecture="aarch64", database=str(database), data_uid=10001, data_gid=10001, data_device=description["device"], data_inode=description["inode"], schema=description["schema"], work_directory=str(base / "work"), backup_environment=str(runtime), initial_container=initial, network_id=network, health_seconds=30)
+        fixture.policy.update(architecture="x86_64", database=str(database), data_uid=10001, data_gid=10001, data_device=description["device"], data_inode=description["inode"], schema=description["schema"], work_directory=str(base / "work"), backup_environment=str(runtime), initial_container=initial, network_id=network, health_seconds=30)
         fixture.runtime_policy.chmod(0o600)
         fixture.runtime_policy.write_text(json.dumps(fixture.policy))
         fixture.runtime_policy.chmod(0o400)
