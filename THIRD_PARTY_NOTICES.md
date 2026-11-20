@@ -20,19 +20,19 @@ linked for verification; the package's actual license/notice files take preceden
 | [@microsoft/signalr](https://registry.npmjs.org/@microsoft%2fsignalr/10.0.11) | 10.0.11  | MIT                                   |
 | [@sentry/browser](https://registry.npmjs.org/@sentry%2fbrowser/10.75.3)       | 10.75.3  | MIT                                   |
 | [@solidjs/router](https://registry.npmjs.org/@solidjs%2frouter/0.16.3)        | 0.16.3   | MIT                                   |
-| [solid-js](https://registry.npmjs.org/solid-js/1.9.15)                        | 1.9.15   | MIT                                   |
+| [solid-js](https://registry.npmjs.org/solid-js/1.9.19)                        | 1.9.19   | MIT                                   |
 | [posthog-js](https://registry.npmjs.org/posthog-js/1.434.15)                  | 1.434.15 | Apache-2.0 AND MIT                    |
 | [typescript](https://registry.npmjs.org/typescript/6.0.3)                     | 6.0.3    | Apache-2.0                            |
-| [vite](https://registry.npmjs.org/vite/8.3.1)                                 | 8.3.1    | MIT, with bundled third-party notices |
-| [vite-plugin-solid](https://registry.npmjs.org/vite-plugin-solid/2.11.14)     | 2.11.14  | MIT                                   |
-| [vitest](https://registry.npmjs.org/vitest/4.1.11)                            | 4.1.11   | MIT, with bundled third-party notices |
+| [vite](https://registry.npmjs.org/vite/8.3.8)                                 | 8.3.8    | MIT, with bundled third-party notices |
+| [vite-plugin-solid](https://registry.npmjs.org/vite-plugin-solid/2.11.16)     | 2.11.16  | MIT                                   |
+| [vitest](https://registry.npmjs.org/vitest/4.1.12)                            | 4.1.12   | MIT, with bundled third-party notices |
 | [jsdom](https://registry.npmjs.org/jsdom/30.1.1)                              | 30.1.1   | MIT                                   |
-| [@astrojs/solid-js](https://registry.npmjs.org/@astrojs%2fsolid-js/7.0.2)     | 7.0.2    | MIT                                   |
-| [astro](https://registry.npmjs.org/astro/7.3.5)                               | 7.3.5    | MIT, with bundled third-party notices |
-| [@astrojs/check](https://registry.npmjs.org/@astrojs%2fcheck/0.9.10)          | 0.9.10   | MIT                                   |
+| [@astrojs/solid-js](https://registry.npmjs.org/@astrojs%2fsolid-js/7.1.5)     | 7.1.5    | MIT                                   |
+| [astro](https://registry.npmjs.org/astro/7.4.11)                              | 7.4.11   | MIT, with bundled third-party notices |
+| [@astrojs/check](https://registry.npmjs.org/@astrojs%2fcheck/0.9.12)          | 0.9.12   | MIT                                   |
 | [wrangler](https://registry.npmjs.org/wrangler/4.158.0)                       | 4.158.0  | MIT OR Apache-2.0                     |
 | [lefthook](https://registry.npmjs.org/lefthook/2.1.14)                        | 2.1.14   | MIT                                   |
-| [markdownlint-cli](https://registry.npmjs.org/markdownlint-cli/0.49.1)        | 0.49.1   | MIT                                   |
+| [markdownlint-cli](https://registry.npmjs.org/markdownlint-cli/0.50.0)        | 0.50.0   | MIT                                   |
 | [prettier](https://registry.npmjs.org/prettier/3.9.9)                         | 3.9.9    | MIT                                   |
 
 PostHog's `AND` expression requires attention to both licenses; it is not permission to select just
