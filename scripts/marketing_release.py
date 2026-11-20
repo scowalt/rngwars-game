@@ -115,13 +115,22 @@ def health(origin, files, required=True):
     return {"passed": bool(results) and all(x["status"] == 200 and x["matched"] for x in results), "checks": results}
 
 
-def becomes_active(client, version, attempts=10, interval=3):
+def eventually(check, attempts=10, interval=3):
     for attempt in range(attempts):
-        if cf.active_version(client) == version:
+        if check():
             return True
         if attempt + 1 < attempts:
             time.sleep(interval)
     return False
+
+
+def version_visible(client, version):
+    try:
+        return client.request("GET", f"/workers/scripts/{client.worker}/versions/{version}")["id"] == version
+    except m.Blocked as error:
+        if str(error) == "provider_http_404":
+            return False
+        raise
 
 
 def deploy(info, files, revision, run_id, binding):
@@ -147,9 +156,9 @@ def deploy(info, files, revision, run_id, binding):
             except m.Blocked:
                 raise
             except Exception:
-                m.require(becomes_active(client, version), "ambiguous_promotion_no_retry")
+                m.require(eventually(lambda: cf.active_version(client) == version), "ambiguous_promotion_no_retry")
             promoted = True
-            m.require(becomes_active(client, version), "deployment_readback")
+            m.require(eventually(lambda: cf.active_version(client) == version), "deployment_readback")
             result = None
             for attempt in range(5):
                 result = health(binding["health_origin"], files)
@@ -158,8 +167,7 @@ def deploy(info, files, revision, run_id, binding):
                 time.sleep(3)
             m.require(result is not None and result["passed"], "deployment_health")
         else:
-            observed = client.request("GET", f"/workers/scripts/{client.worker}/versions/{version}")
-            m.require(observed["id"] == version and cf.active_version(client) == baseline, "preview_version_readback")
+            m.require(eventually(lambda: version_visible(client, version)) and cf.active_version(client) == baseline, "preview_version_readback")
             serving = client.request("GET", f"/workers/scripts/{client.worker}/subdomain")
             if serving.get("previews_enabled") is True:
                 subdomain = client.request("GET", "/workers/subdomain")["subdomain"]
