@@ -115,6 +115,15 @@ def health(origin, files, required=True):
     return {"passed": bool(results) and all(x["status"] == 200 and x["matched"] for x in results), "checks": results}
 
 
+def becomes_active(client, version, attempts=10, interval=3):
+    for attempt in range(attempts):
+        if cf.active_version(client) == version:
+            return True
+        if attempt + 1 < attempts:
+            time.sleep(interval)
+    return False
+
+
 def deploy(info, files, revision, run_id, binding):
     m.require(os.environ.get("MARKETING_RELEASE_ENABLED") == "true" and os.environ.get("RELEASE_KIND") == info["kind"], "release_not_enabled")
     client = cf.Client(binding["account_id"], binding["worker_name"], os.environ["CLOUDFLARE_API_TOKEN"])
@@ -138,9 +147,9 @@ def deploy(info, files, revision, run_id, binding):
             except m.Blocked:
                 raise
             except Exception:
-                m.require(cf.active_version(client) == version, "ambiguous_promotion_no_retry")
+                m.require(becomes_active(client, version), "ambiguous_promotion_no_retry")
             promoted = True
-            m.require(cf.active_version(client) == version, "deployment_readback")
+            m.require(becomes_active(client, version), "deployment_readback")
             result = None
             for attempt in range(5):
                 result = health(binding["health_origin"], files)

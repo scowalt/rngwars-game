@@ -68,6 +68,37 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(promote.call_count, 1)
             self.assertEqual(state["active"], "new")
 
+    def test_promotion_that_reads_back_late_is_accepted_without_repeating_the_write(self):
+        info = {"kind": "production", "bundle_sha256": "a" * 64, "source_revision": "b" * 40}
+        binding = {"account_id": "a" * 32, "worker_name": "fixture-worker", "health_origin": "https://example.invalid"}
+        env = {"MARKETING_RELEASE_ENABLED": "true", "RELEASE_KIND": "production", **{name: "synthetic" for name in ["CLOUDFLARE_API_TOKEN", "RELEASE_STORAGE_ACCESS_KEY_ID", "RELEASE_STORAGE_SECRET_ACCESS_KEY", "RELEASE_LOG_ENCRYPTION_KEY", "GH_TOKEN"]}}
+        state = {"promoted": False, "stale_reads": 2}
+        def active(client):
+            if state["promoted"] and state["stale_reads"] == 0:
+                return "new"
+            if state["promoted"]:
+                state["stale_reads"] -= 1
+            return "baseline"
+        def promotion(client, version):
+            state["promoted"] = True
+        with patch.dict(os.environ, env), patch.object(r.cf, "fenced"), patch.object(r.cf, "active_version", side_effect=active), patch.object(r.cf, "upload", return_value="new"), patch.object(r.cf, "promote", side_effect=promotion) as promote, patch.object(r, "reserve"), patch.object(r, "evidence") as evidence, patch.object(r.time, "sleep") as sleep, patch.object(r, "health", return_value={"passed": True}):
+            with patch("builtins.print"):
+                r.deploy(info, {"index.html": b"RNGWars"}, "c" * 40, 42, binding)
+            self.assertEqual(promote.call_count, 1)
+            self.assertEqual(sleep.call_count, 2)
+            self.assertEqual(evidence.call_args.args[3], "verified")
+
+    def test_promotion_that_never_reads_back_fails_without_repeating_the_write(self):
+        info = {"kind": "production", "bundle_sha256": "a" * 64, "source_revision": "b" * 40}
+        binding = {"account_id": "a" * 32, "worker_name": "fixture-worker", "health_origin": "https://example.invalid"}
+        env = {"MARKETING_RELEASE_ENABLED": "true", "RELEASE_KIND": "production", **{name: "synthetic" for name in ["CLOUDFLARE_API_TOKEN", "RELEASE_STORAGE_ACCESS_KEY_ID", "RELEASE_STORAGE_SECRET_ACCESS_KEY", "RELEASE_LOG_ENCRYPTION_KEY", "GH_TOKEN"]}}
+        with patch.dict(os.environ, env), patch.object(r.cf, "fenced"), patch.object(r.cf, "active_version", return_value="baseline"), patch.object(r.cf, "upload", return_value="new"), patch.object(r.cf, "promote") as promote, patch.object(r, "reserve"), patch.object(r, "evidence") as evidence, patch.object(r.time, "sleep") as sleep, patch.object(r, "health", return_value={"passed": True}):
+            with self.assertRaisesRegex(r.m.Blocked, "deployment_readback"):
+                r.deploy(info, {"index.html": b"RNGWars"}, "c" * 40, 42, binding)
+            self.assertEqual(promote.call_count, 1)
+            self.assertEqual(sleep.call_count, 9)
+            self.assertEqual(evidence.call_args.args[3], "failed")
+
     def test_known_failed_production_health_rolls_back_once_to_captured_version(self):
         info = {"kind": "production", "bundle_sha256": "a" * 64, "source_revision": "b" * 40}
         binding = {"account_id": "a" * 32, "worker_name": "fixture-worker", "health_origin": "https://example.invalid"}
