@@ -57,6 +57,16 @@ class MarketingWorkflowTests(unittest.TestCase):
         self.assertFalse(workflow["concurrency"]["cancel-in-progress"])
         self.assertEqual(workflow["jobs"]["build"]["needs"], "resolve")
 
+    def test_a_build_superseded_by_newer_main_signs_and_uploads_nothing(self):
+        jobs = self.workflow["jobs"]
+        self.assertEqual(jobs["resolve"]["outputs"]["superseded"], "${{ steps.source.outputs.superseded }}")
+        self.assertEqual(jobs["build"]["if"], "needs.resolve.outputs.superseded != 'true'")
+        steps = jobs["seal"]["steps"]
+        assembly = next(i for i, step in enumerate(steps) if "marketing_producer.py seal" in step.get("run", ""))
+        self.assertEqual(steps[assembly]["id"], "seal")
+        for step in steps[assembly + 1:]:
+            self.assertEqual(step["if"], "steps.seal.outputs.superseded != 'true'")
+
 
 if __name__ == "__main__":
     unittest.main()
