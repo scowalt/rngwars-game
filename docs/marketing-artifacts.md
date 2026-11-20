@@ -43,7 +43,10 @@ CI runs on all branch pushes to establish exact-head results for preview candida
 merge validation remains separate. Fork/PR-merge runs cannot enter the signing graph. The producer
 runs from main through `workflow_run`, or manual dispatch with an explicit successful CI run ID.
 Only first attempts and current source/controller revisions are accepted. Superseded builds fail
-closed; per-branch concurrency does not promise an archive of every intermediate revision.
+closed; per-branch concurrency does not promise an archive of every intermediate revision. When main
+moves while a build runs, `resolve` or `seal` sets `superseded=true` and the run ends without
+building, signing or uploading a candidate, instead of failing. The newer main revision produces its
+own candidate. Any other refusal still fails the run.
 
 Source execution and signing use separate GitHub-hosted runners. The source job gets no OIDC,
 attestation, package, deployment, private-network or production-secret capability. The signing job

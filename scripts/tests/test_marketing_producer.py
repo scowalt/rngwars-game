@@ -102,6 +102,22 @@ class ProducerTests(unittest.TestCase):
                         p.output(value)
             self.assertFalse(path.exists())
 
+    def test_only_a_superseded_controller_ends_resolve_and_seal_without_a_candidate(self):
+        for command, error, superseded in [("resolve", "stale_controller_revision", True), ("seal", "stale_controller_revision", True), ("verify", "stale_controller_revision", False), ("seal", "superseded_source_revision", False)]:
+            with self.subTest(command=command, error=error), tempfile.TemporaryDirectory() as temporary:
+                path = Path(temporary) / "step-output"
+                arguments = ["marketing_producer.py", command] + ([] if command == "resolve" else [str(Path(temporary) / "release.zip")])
+                with patch.dict(os.environ, {**self.context(), "GITHUB_OUTPUT": str(path)}), patch.object(sys, "argv", arguments), patch.object(p.m, "resolve_ci", side_effect=p.m.Blocked(error)), patch.object(p.m, "github") as github, patch("builtins.print"):
+                    if superseded:
+                        p.main()
+                        self.assertEqual(path.read_text(), "superseded=true\n")
+                    else:
+                        with self.assertRaises(p.m.Blocked):
+                            p.main()
+                        self.assertFalse(path.exists())
+                    github.assert_not_called()
+                self.assertFalse((Path(temporary) / "release.zip").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

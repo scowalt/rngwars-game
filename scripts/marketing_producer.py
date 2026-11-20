@@ -118,7 +118,14 @@ def main():
         print(json.dumps({"status": "untrusted_assets_packaged", **result}))
         return
     ci_run, revision, run_id = context(os.environ)
-    identity = {**m.resolve_ci(ci_run, revision), "producer_run_id": run_id}
+    try:
+        identity = {**m.resolve_ci(ci_run, revision), "producer_run_id": run_id}
+    except m.Blocked as error:
+        if str(error) != "stale_controller_revision" or args.command == "verify":
+            raise
+        output({"superseded": "true"})
+        print(json.dumps({"status": "controller_superseded_by_newer_main_nothing_produced", "workflow_revision": revision}))
+        return
     if args.command == "resolve":
         output({"source_revision": identity["source_revision"], "source_branch": identity["source_branch"]})
         print(json.dumps({"status": "exact_CI_source_resolved", **identity}))
