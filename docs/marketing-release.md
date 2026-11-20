@@ -10,6 +10,11 @@ current source revision and trusted-main workflow revision are rechecked before 
   Manual dispatch defaults to `validate`. `preflight` checks protected bindings and writes encrypted
   evidence without changing the Worker or its triggers. `deploy` additionally requires
   `MARKETING_RELEASE_ENABLED=true`.
+- A candidate is released only by the main revision that signed it. If main moves while a candidate
+  is being built, for example when a pull request merges before its branch preview finishes, the
+  automatic run for that candidate is skipped and nothing is released from it. A later push builds a
+  new candidate. A manual dispatch that names the skipped candidate still fails with
+  `producer_workflow_identity`.
 - Production and preview use separate main-only environments with owner review. The administrative
   bypass option is disabled. Self-review is allowed for the single-maintainer workflow; normal
   review is still required. Source builds cannot access either environment.

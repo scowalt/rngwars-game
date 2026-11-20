@@ -21,6 +21,20 @@ class ReleaseTests(unittest.TestCase):
                 with self.assertRaises(r.m.Blocked):
                     r.context({**env, key: value})
 
+    def test_candidate_signed_under_another_main_revision_is_refused_before_its_artifact_is_read(self):
+        current, earlier = "a" * 40, "b" * 40
+        run = {"workflow_id": 7, "path": ".github/workflows/marketing-artifact.yml", "head_sha": earlier, "head_branch": "main", "status": "completed", "conclusion": "success", "run_attempt": 1, "event": "workflow_run", "repository": {"id": 1442331254}, "head_repository": {"id": 1442331254}}
+        requested = []
+        def metadata(path):
+            requested.append(path)
+            return {"/actions/workflows/marketing-artifact.yml": {"id": 7}, "/actions/runs/42": run}[path]
+        with patch.object(r.m, "github", side_effect=metadata), patch.object(r.producer, "download") as download:
+            with self.assertRaises(r.m.Blocked) as refusal:
+                r.candidate(42, current)
+        self.assertEqual(str(refusal.exception), "producer_workflow_identity")
+        self.assertEqual(requested, ["/actions/workflows/marketing-artifact.yml", "/actions/runs/42"])
+        download.assert_not_called()
+
     def test_an_unfenced_controller_blocks_all_reservations_and_provider_writes(self):
         info = {"kind": "production", "bundle_sha256": "a" * 64}
         binding = {"account_id": "a" * 32, "worker_name": "fixture-worker"}

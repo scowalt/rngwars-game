@@ -20,6 +20,13 @@ class ReleaseWorkflowTests(unittest.TestCase):
             self.assertIn(text, prepare["if"])
         self.assertEqual(prepare["steps"][0]["with"]["ref"], "${{ github.workflow_sha }}")
 
+    def test_automatic_run_skips_a_candidate_signed_under_an_earlier_main_revision(self):
+        condition = " ".join(self.workflow["jobs"]["prepare"]["if"].split())
+        automatic = "(github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_sha == github.sha)"
+        self.assertTrue(condition.endswith("(github.event_name == 'workflow_dispatch' || " + automatic + ")"))
+        self.assertEqual(self.workflow["jobs"]["release"]["needs"], "prepare")
+        self.assertNotIn("always()", json.dumps(self.workflow["jobs"]))
+
     def test_release_requires_validated_candidate_enablement_and_protected_environment(self):
         release = self.workflow["jobs"]["release"]
         self.assertEqual(release["needs"], "prepare")
