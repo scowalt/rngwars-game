@@ -139,6 +139,12 @@ incoming connections blocked, and DNS/routes unchanged. SSH uses a private socke
 host key, the dedicated key only, no agent and no forwarding. The server must return the exact fresh
 challenge.
 
+The `rngwars-deploy` account must have no password but must not be locked. Its shadow password field
+is `*`, set with `usermod -p '*' rngwars-deploy`. `useradd` writes `!` by default. The transport's
+sshd runs with `UsePAM no`, and in that mode OpenSSH refuses a locked account before it checks the
+key. It logs that refusal at INFO, below the listener's `LogLevel ERROR`, so CI reports only
+`private_SSH_probe_failed`.
+
 After the positive SSH check, three negative connection checks must not connect: the target's
 ordinary SSH and HTTPS ports and the independent denied endpoint's SSH port. A timeout alone does
 not identify the cause of denial; pair runtime observations with independently validated policy and
